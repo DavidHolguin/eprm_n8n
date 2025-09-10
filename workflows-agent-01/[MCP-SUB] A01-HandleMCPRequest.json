@@ -1,0 +1,407 @@
+{
+  "name": "[MCP-SUB] A01-HandleMCPRequest",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "mcp-server",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "https://localhost:*,https://*.railway.app"
+        }
+      },
+      "id": "webhook-mcp-server",
+      "name": "Webhook - MCP Server",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        -800,
+        200
+      ],
+      "webhookId": "mcp-server-endpoint"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Procesar solicitud JSON-RPC 2.0 del Model Context Protocol\nconst body = $input.item.json.body || {};\nconst headers = $input.item.json.headers || {};\n\n// Log de entrada\nconsole.log('MCP Request received:', {\n  method: body.method,\n  hasParams: !!body.params,\n  id: body.id,\n  userAgent: headers['user-agent']\n});\n\n// Validar estructura básica JSON-RPC 2.0\nif (!body.jsonrpc || body.jsonrpc !== '2.0') {\n  return {\n    isValid: false,\n    errorCode: -32600,\n    errorMessage: 'Invalid Request - jsonrpc must be \"2.0\"',\n    requestId: body.id || null\n  };\n}\n\nif (!body.method) {\n  return {\n    isValid: false,\n    errorCode: -32600,\n    errorMessage: 'Invalid Request - method is required',\n    requestId: body.id || null\n  };\n}\n\n// Extraer autenticación del header (si presente)\nconst authorization = headers.authorization || headers.Authorization || '';\nconst bearerToken = authorization.replace('Bearer ', '');\n\n// Validar token JWT básico (estructura, no verificación completa)\nlet authContext = null;\nif (bearerToken) {\n  try {\n    // Decodificar payload JWT (sin verificar signature aquí)\n    const payloadB64 = bearerToken.split('.')[1];\n    const payload = JSON.parse(Buffer.from(payloadB64, 'base64').toString());\n    \n    authContext = {\n      user_id: payload.sub,\n      organization_id: payload.org_id,\n      expires_at: payload.exp\n    };\n    \n    // Verificar expiración\n    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {\n      return {\n        isValid: false,\n        errorCode: -32001,\n        errorMessage: 'Authentication Error - Token expired',\n        requestId: body.id || null\n      };\n    }\n  } catch (error) {\n    return {\n      isValid: false,\n      errorCode: -32001,\n      errorMessage: 'Authentication Error - Invalid token format',\n      requestId: body.id || null\n    };\n  }\n}\n\n// Métodos MCP soportados\nconst supportedMethods = [\n  'initialize',\n  'tools/list',\n  'tools/call',\n  'resources/list',\n  'resources/read',\n  'prompts/list',\n  'prompts/get'\n];\n\nif (!supportedMethods.includes(body.method)) {\n  return {\n    isValid: false,\n    errorCode: -32601,\n    errorMessage: `Method not found: ${body.method}`,\n    requestId: body.id || null,\n    supportedMethods: supportedMethods\n  };\n}\n\n// Estructurar datos válidos\nconst mcpRequest = {\n  jsonrpc: body.jsonrpc,\n  method: body.method,\n  params: body.params || {},\n  id: body.id || null,\n  authContext: authContext,\n  timestamp: new Date().toISOString(),\n  clientInfo: {\n    userAgent: headers['user-agent'] || 'unknown',\n    remoteAddress: headers['x-forwarded-for'] || 'unknown'\n  }\n};\n\nreturn {\n  isValid: true,\n  request: mcpRequest\n};"
+      },
+      "id": "parse-mcp-request",
+      "name": "Parsear Solicitud MCP",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -500,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "mcp-validation-check",
+              "leftValue": "={{ $('Parsear Solicitud MCP').item.json.isValid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-mcp-valid",
+      "name": "¿Solicitud MCP Válida?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -200,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Procesar método MCP específico\nconst mcpRequest = $('Parsear Solicitud MCP').item.json.request;\nconst { method, params, authContext } = mcpRequest;\n\nconsole.log(`Processing MCP method: ${method}`);\n\nswitch (method) {\n  case 'initialize':\n    // Respuesta de inicialización MCP\n    return {\n      needsTaskExecution: false,\n      mcpResponse: {\n        jsonrpc: '2.0',\n        result: {\n          protocolVersion: '2024-11-05',\n          capabilities: {\n            tools: {\n              listChanged: true\n            },\n            resources: {\n              subscribe: false,\n              listChanged: true\n            },\n            prompts: {\n              listChanged: true\n            },\n            logging: {}\n          },\n          serverInfo: {\n            name: 'EPRM-Suite-Agent-01',\n            version: '1.0.0'\n          }\n        },\n        id: mcpRequest.id\n      }\n    };\n\n  case 'tools/list':\n    // Lista de herramientas disponibles\n    return {\n      needsTaskExecution: false,\n      mcpResponse: {\n        jsonrpc: '2.0',\n        result: {\n          tools: [\n            {\n              name: 'orchestrate_task',\n              description: 'Orchestrate and execute a task using the EPRM Suite agents',\n              inputSchema: {\n                type: 'object',\n                properties: {\n                  task_type: {\n                    type: 'string',\n                    description: 'The type of task to execute'\n                  },\n                  parameters: {\n                    type: 'object',\n                    description: 'Task-specific parameters'\n                  },\n                  priority: {\n                    type: 'integer',\n                    description: 'Task priority (0-10)',\n                    default: 0\n                  }\n                },\n                required: ['task_type']\n              }\n            }\n          ]\n        },\n        id: mcpRequest.id\n      }\n    };\n\n  case 'tools/call':\n    // Llamada a herramienta - necesita ejecución de tarea\n    const toolName = params.name;\n    const toolArgs = params.arguments || {};\n    \n    if (toolName !== 'orchestrate_task') {\n      return {\n        needsTaskExecution: false,\n        mcpResponse: {\n          jsonrpc: '2.0',\n          error: {\n            code: -32602,\n            message: `Unknown tool: ${toolName}`\n          },\n          id: mcpRequest.id\n        }\n      };\n    }\n    \n    // Validar autenticación para ejecución de tareas\n    if (!authContext || !authContext.user_id || !authContext.organization_id) {\n      return {\n        needsTaskExecution: false,\n        mcpResponse: {\n          jsonrpc: '2.0',\n          error: {\n            code: -32001,\n            message: 'Authentication required for task execution'\n          },\n          id: mcpRequest.id\n        }\n      };\n    }\n    \n    return {\n      needsTaskExecution: true,\n      taskData: {\n        organization_id: authContext.organization_id,\n        creator_user_id: authContext.user_id,\n        task_type: toolArgs.task_type,\n        parameters: toolArgs.parameters || {},\n        priority: toolArgs.priority || 0,\n        project_id: toolArgs.project_id || null\n      },\n      mcpRequestId: mcpRequest.id\n    };\n\n  case 'resources/list':\n  case 'resources/read':\n  case 'prompts/list':\n  case 'prompts/get':\n    // Métodos no implementados aún\n    return {\n      needsTaskExecution: false,\n      mcpResponse: {\n        jsonrpc: '2.0',\n        error: {\n          code: -32601,\n          message: `Method ${method} not yet implemented`\n        },\n        id: mcpRequest.id\n      }\n    };\n\n  default:\n    return {\n      needsTaskExecution: false,\n      mcpResponse: {\n        jsonrpc: '2.0',\n        error: {\n          code: -32601,\n          message: `Method not found: ${method}`\n        },\n        id: mcpRequest.id\n      }\n    };\n}"
+      },
+      "id": "process-mcp-method",
+      "name": "Procesar Método MCP",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        100,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "needs-task-execution",
+              "leftValue": "={{ $('Procesar Método MCP').item.json.needsTaskExecution }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-needs-task-execution",
+      "name": "¿Necesita Ejecutar Tarea?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        400,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "[A01] Master-Task-Orchestrator",
+        "data": "={{ JSON.stringify($('Procesar Método MCP').item.json.taskData) }}"
+      },
+      "id": "execute-task-orchestrator",
+      "name": "Ejecutar Master-Task-Orchestrator",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        700,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Formatear resultado de tarea como respuesta MCP\nconst taskResult = $input.item.json;\nconst mcpRequestId = $('Procesar Método MCP').item.json.mcpRequestId;\n\nconst mcpResponse = {\n  jsonrpc: '2.0',\n  result: {\n    content: [\n      {\n        type: 'text',\n        text: `Task executed successfully. Task ID: ${taskResult.task_id}, Assigned Agent: ${taskResult.assigned_agent_id}, Status: ${taskResult.status}`\n      }\n    ],\n    isError: false,\n    metadata: {\n      task_id: taskResult.task_id,\n      assigned_agent_id: taskResult.assigned_agent_id,\n      status: taskResult.status,\n      timestamp: taskResult.timestamp || new Date().toISOString()\n    }\n  },\n  id: mcpRequestId\n};\n\nreturn { mcpResponse };"
+      },
+      "id": "format-task-success-response",
+      "name": "Formatear Respuesta de Éxito",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Formatear error de tarea como respuesta MCP\nconst taskError = $input.item.error || { message: 'Unknown task execution error' };\nconst mcpRequestId = $('Procesar Método MCP').item.json.mcpRequestId;\n\nconst mcpResponse = {\n  jsonrpc: '2.0',\n  result: {\n    content: [\n      {\n        type: 'text',\n        text: `Task execution failed: ${taskError.message}`\n      }\n    ],\n    isError: true,\n    metadata: {\n      error: taskError.message,\n      timestamp: new Date().toISOString()\n    }\n  },\n  id: mcpRequestId\n};\n\nreturn { mcpResponse };"
+      },
+      "id": "format-task-error-response",
+      "name": "Formatear Respuesta de Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json.mcpResponse) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "additionalHeaders": true,
+            "headers": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Access-Control-Allow-Methods",
+                "value": "POST, OPTIONS"
+              },
+              {
+                "name": "Access-Control-Allow-Headers",
+                "value": "Content-Type, Authorization"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-mcp-success",
+      "name": "Respuesta MCP Exitosa",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1300,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Formatear respuesta directa (sin ejecución de tarea)\nconst methodResponse = $('Procesar Método MCP').item.json.mcpResponse;\n\nreturn { mcpResponse: methodResponse };"
+      },
+      "id": "format-direct-response",
+      "name": "Formatear Respuesta Directa",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Formatear error de validación MCP\nconst parseError = $('Parsear Solicitud MCP').item.json;\n\nconst errorResponse = {\n  jsonrpc: '2.0',\n  error: {\n    code: parseError.errorCode,\n    message: parseError.errorMessage,\n    data: parseError.supportedMethods ? {\n      supportedMethods: parseError.supportedMethods\n    } : null\n  },\n  id: parseError.requestId\n};\n\nreturn { mcpResponse: errorResponse };"
+      },
+      "id": "format-validation-error",
+      "name": "Formatear Error de Validación",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -200,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json.mcpResponse) }}",
+        "options": {
+          "responseCode": "={{ $json.mcpResponse.error && $json.mcpResponse.error.code === -32001 ? 401 : 400 }}",
+          "responseHeaders": {
+            "additionalHeaders": true,
+            "headers": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-mcp-error",
+      "name": "Respuesta MCP Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        400
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - MCP Server": {
+      "main": [
+        [
+          {
+            "node": "Parsear Solicitud MCP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parsear Solicitud MCP": {
+      "main": [
+        [
+          {
+            "node": "¿Solicitud MCP Válida?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Solicitud MCP Válida?": {
+      "main": [
+        [
+          {
+            "node": "Procesar Método MCP",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Formatear Error de Validación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Procesar Método MCP": {
+      "main": [
+        [
+          {
+            "node": "¿Necesita Ejecutar Tarea?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Necesita Ejecutar Tarea?": {
+      "main": [
+        [
+          {
+            "node": "Ejecutar Master-Task-Orchestrator",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Formatear Respuesta Directa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ejecutar Master-Task-Orchestrator": {
+      "main": [
+        [
+          {
+            "node": "Formatear Respuesta de Éxito",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Formatear Respuesta de Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatear Respuesta de Éxito": {
+      "main": [
+        [
+          {
+            "node": "Respuesta MCP Exitosa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatear Respuesta de Error": {
+      "main": [
+        [
+          {
+            "node": "Respuesta MCP Exitosa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatear Respuesta Directa": {
+      "main": [
+        [
+          {
+            "node": "Respuesta MCP Exitosa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatear Error de Validación": {
+      "main": [
+        [
+          {
+            "node": "Respuesta MCP Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "mcp-handler-v1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "a01-handle-mcp-request",
+  "tags": [
+    {
+      "id": "agent-01",
+      "name": "Agent 01"
+    },
+    {
+      "id": "mcp",
+      "name": "MCP"
+    },
+    {
+      "id": "protocol-adapter",
+      "name": "Protocol Adapter"
+    }
+  ]
+}

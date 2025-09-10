@@ -1,0 +1,519 @@
+{
+  "name": "[MCP-SUB] A01-HandleA2ARequest",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "a2a-server",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "https://localhost:*,https://*.railway.app,https://*.ngrok.io"
+        }
+      },
+      "id": "webhook-a2a-server",
+      "name": "Webhook - A2A Server",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        -800,
+        200
+      ],
+      "webhookId": "a2a-server-endpoint"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Procesar solicitud Agent-to-Agent (A2A)\nconst body = $input.item.json.body || {};\nconst headers = $input.item.json.headers || {};\n\n// Log de entrada\nconsole.log('A2A Request received:', {\n  method: body.method,\n  hasParams: !!body.params,\n  id: body.id,\n  userAgent: headers['user-agent'],\n  agentId: headers['x-agent-id']\n});\n\n// Validar estructura básica JSON-RPC 2.0\nif (!body.jsonrpc || body.jsonrpc !== '2.0') {\n  return {\n    isValid: false,\n    errorCode: -32600,\n    errorMessage: 'Invalid Request - jsonrpc must be \"2.0\"',\n    requestId: body.id || null\n  };\n}\n\nif (!body.method) {\n  return {\n    isValid: false,\n    errorCode: -32600,\n    errorMessage: 'Invalid Request - method is required',\n    requestId: body.id || null\n  };\n}\n\n// Validar autenticación A2A\nconst agentId = headers['x-agent-id'];\nconst apiKey = headers['x-api-key'] || headers['authorization']?.replace('Bearer ', '');\nconst agentSignature = headers['x-agent-signature'];\n\nif (!agentId) {\n  return {\n    isValid: false,\n    errorCode: -32001,\n    errorMessage: 'Authentication Error - x-agent-id header required',\n    requestId: body.id || null\n  };\n}\n\nif (!apiKey) {\n  return {\n    isValid: false,\n    errorCode: -32001,\n    errorMessage: 'Authentication Error - API key required',\n    requestId: body.id || null\n  };\n}\n\n// Métodos A2A soportados\nconst supportedMethods = [\n  'getAgentCard',\n  'executeTask',\n  'getTaskStatus',\n  'delegateTask',\n  'ping'\n];\n\nif (!supportedMethods.includes(body.method)) {\n  return {\n    isValid: false,\n    errorCode: -32601,\n    errorMessage: `Method not found: ${body.method}`,\n    requestId: body.id || null,\n    supportedMethods: supportedMethods\n  };\n}\n\n// Estructurar datos válidos\nconst a2aRequest = {\n  jsonrpc: body.jsonrpc,\n  method: body.method,\n  params: body.params || {},\n  id: body.id || null,\n  authContext: {\n    agent_id: agentId,\n    api_key: apiKey,\n    signature: agentSignature\n  },\n  timestamp: new Date().toISOString(),\n  clientInfo: {\n    userAgent: headers['user-agent'] || 'unknown',\n    remoteAddress: headers['x-forwarded-for'] || 'unknown'\n  }\n};\n\nreturn {\n  isValid: true,\n  request: a2aRequest\n};"
+      },
+      "id": "parse-a2a-request",
+      "name": "Parsear Solicitud A2A",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -500,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "a2a-validation-check",
+              "leftValue": "={{ $('Parsear Solicitud A2A').item.json.isValid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-a2a-valid",
+      "name": "¿Solicitud A2A Válida?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -200,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Procesar método A2A específico\nconst a2aRequest = $('Parsear Solicitud A2A').item.json.request;\nconst { method, params, authContext } = a2aRequest;\n\nconsole.log(`Processing A2A method: ${method} from agent: ${authContext.agent_id}`);\n\n// Definir Agent Card de EPRM Suite Agent 01\nconst agentCard = {\n  agent_id: 'A01',\n  name: 'Integration-Orchestration Agent',\n  version: '1.0.0',\n  description: 'Central orchestrator for task routing and agent coordination in EPRM Suite',\n  capabilities: [\n    {\n      name: 'task_orchestration',\n      description: 'Route and orchestrate tasks across the agent ecosystem',\n      input_schema: {\n        type: 'object',\n        properties: {\n          task_type: { type: 'string', description: 'Type of task to execute' },\n          parameters: { type: 'object', description: 'Task-specific parameters' },\n          priority: { type: 'integer', minimum: 0, maximum: 10, default: 0 }\n        },\n        required: ['task_type']\n      }\n    },\n    {\n      name: 'agent_delegation',\n      description: 'Delegate tasks to other agents in the ecosystem',\n      input_schema: {\n        type: 'object',\n        properties: {\n          target_agent_id: { type: 'string', description: 'ID of target agent' },\n          task_data: { type: 'object', description: 'Task data to delegate' }\n        },\n        required: ['target_agent_id', 'task_data']\n      }\n    }\n  ],\n  protocols: ['A2A', 'MCP'],\n  endpoints: {\n    a2a: '/a2a-server',\n    mcp: '/mcp-server',\n    task_orchestrator: '/task-orchestrator'\n  },\n  authentication: {\n    type: 'api_key',\n    required_headers: ['x-agent-id', 'x-api-key']\n  },\n  rate_limits: {\n    requests_per_minute: 100,\n    burst_limit: 20\n  },\n  status: 'active',\n  last_updated: new Date().toISOString()\n};\n\nswitch (method) {\n  case 'ping':\n    return {\n      needsTaskExecution: false,\n      a2aResponse: {\n        jsonrpc: '2.0',\n        result: {\n          status: 'active',\n          timestamp: new Date().toISOString(),\n          agent_id: 'A01',\n          version: '1.0.0'\n        },\n        id: a2aRequest.id\n      }\n    };\n\n  case 'getAgentCard':\n    return {\n      needsTaskExecution: false,\n      a2aResponse: {\n        jsonrpc: '2.0',\n        result: agentCard,\n        id: a2aRequest.id\n      }\n    };\n\n  case 'executeTask':\n  case 'delegateTask':\n    // Validar parámetros de tarea\n    const taskData = params.task_data || params;\n    \n    if (!taskData.task_type) {\n      return {\n        needsTaskExecution: false,\n        a2aResponse: {\n          jsonrpc: '2.0',\n          error: {\n            code: -32602,\n            message: 'Invalid params - task_type is required'\n          },\n          id: a2aRequest.id\n        }\n      };\n    }\n    \n    // Para executeTask, necesitamos organización y usuario\n    // Para delegateTask, podemos usar el agente como contexto\n    const organizationId = taskData.organization_id || 'default-org-id';\n    const creatorUserId = taskData.creator_user_id || authContext.agent_id;\n    \n    return {\n      needsTaskExecution: true,\n      taskData: {\n        organization_id: organizationId,\n        creator_user_id: creatorUserId,\n        task_type: taskData.task_type,\n        parameters: taskData.parameters || {},\n        priority: taskData.priority || 0,\n        project_id: taskData.project_id || null,\n        source_agent_id: authContext.agent_id,\n        delegation_context: method === 'delegateTask' ? {\n          delegating_agent: authContext.agent_id,\n          delegation_timestamp: new Date().toISOString()\n        } : null\n      },\n      a2aRequestId: a2aRequest.id,\n      sourceAgent: authContext.agent_id\n    };\n\n  case 'getTaskStatus':\n    // Consultar estado de tarea (requeriría implementación adicional)\n    const taskId = params.task_id;\n    \n    if (!taskId) {\n      return {\n        needsTaskExecution: false,\n        a2aResponse: {\n          jsonrpc: '2.0',\n          error: {\n            code: -32602,\n            message: 'Invalid params - task_id is required'\n          },\n          id: a2aRequest.id\n        }\n      };\n    }\n    \n    return {\n      needsTaskQuery: true,\n      queryData: {\n        task_id: taskId,\n        requesting_agent: authContext.agent_id\n      },\n      a2aRequestId: a2aRequest.id\n    };\n\n  default:\n    return {\n      needsTaskExecution: false,\n      a2aResponse: {\n        jsonrpc: '2.0',\n        error: {\n          code: -32601,\n          message: `Method not found: ${method}`\n        },\n        id: a2aRequest.id\n      }\n    };\n}"
+      },
+      "id": "process-a2a-method",
+      "name": "Procesar Método A2A",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        100,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "needs-task-execution",
+              "leftValue": "={{ $('Procesar Método A2A').item.json.needsTaskExecution }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-needs-task-execution",
+      "name": "¿Necesita Ejecutar Tarea?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        400,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "needs-task-query",
+              "leftValue": "={{ $('Procesar Método A2A').item.json.needsTaskQuery }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-needs-task-query",
+      "name": "¿Necesita Consultar Tarea?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        400,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "[A01] Master-Task-Orchestrator",
+        "data": "={{ JSON.stringify($('Procesar Método A2A').item.json.taskData) }}"
+      },
+      "id": "execute-task-orchestrator",
+      "name": "Ejecutar Master-Task-Orchestrator",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        700,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "database",
+        "operation": "select",
+        "tableId": "tasks",
+        "filterType": "manual",
+        "matchConditions": [
+          {
+            "column": "task_id",
+            "operator": "eq",
+            "value": "={{ $('Procesar Método A2A').item.json.queryData.task_id }}"
+          }
+        ],
+        "options": {
+          "selectColumns": ["task_id", "status", "created_at", "completed_at", "assigned_agent_id", "result", "error_message"]
+        }
+      },
+      "id": "query-task-status",
+      "name": "Consultar Estado de Tarea",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "9XlWn9W6ZDhQTb8Z",
+          "name": "Supabase EPRM"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Formatear resultado de tarea como respuesta A2A\nconst taskResult = $input.item.json;\nconst a2aRequestId = $('Procesar Método A2A').item.json.a2aRequestId;\nconst sourceAgent = $('Procesar Método A2A').item.json.sourceAgent;\n\nconst a2aResponse = {\n  jsonrpc: '2.0',\n  result: {\n    task_id: taskResult.task_id,\n    status: taskResult.status || 'completed_success',\n    assigned_agent_id: taskResult.assigned_agent_id,\n    message: `Task successfully ${taskResult.success ? 'completed' : 'processed'}`,\n    timestamp: taskResult.timestamp || new Date().toISOString(),\n    delegation_info: {\n      processed_by: 'A01',\n      requested_by: sourceAgent,\n      processing_time: new Date().toISOString()\n    }\n  },\n  id: a2aRequestId\n};\n\nreturn { a2aResponse };"
+      },
+      "id": "format-task-success-response",
+      "name": "Formatear Respuesta de Éxito",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Formatear respuesta de consulta de estado\nconst taskData = $input.item.json[0];\nconst a2aRequestId = $('Procesar Método A2A').item.json.a2aRequestId;\nconst requestingAgent = $('Procesar Método A2A').item.json.queryData.requesting_agent;\n\nif (!taskData) {\n  const notFoundResponse = {\n    jsonrpc: '2.0',\n    error: {\n      code: -32002,\n      message: 'Task not found',\n      data: {\n        task_id: $('Procesar Método A2A').item.json.queryData.task_id\n      }\n    },\n    id: a2aRequestId\n  };\n  \n  return { a2aResponse: notFoundResponse };\n}\n\nconst a2aResponse = {\n  jsonrpc: '2.0',\n  result: {\n    task_id: taskData.task_id,\n    status: taskData.status,\n    created_at: taskData.created_at,\n    completed_at: taskData.completed_at,\n    assigned_agent_id: taskData.assigned_agent_id,\n    result: taskData.result ? JSON.parse(taskData.result) : null,\n    error_message: taskData.error_message,\n    query_info: {\n      queried_by: requestingAgent,\n      query_timestamp: new Date().toISOString()\n    }\n  },\n  id: a2aRequestId\n};\n\nreturn { a2aResponse };"
+      },
+      "id": "format-query-response",
+      "name": "Formatear Respuesta de Consulta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Formatear error de tarea como respuesta A2A\nconst taskError = $input.item.error || { message: 'Unknown task execution error' };\nconst a2aRequestId = $('Procesar Método A2A').item.json.a2aRequestId;\nconst sourceAgent = $('Procesar Método A2A').item.json.sourceAgent;\n\nconst a2aResponse = {\n  jsonrpc: '2.0',\n  error: {\n    code: -32003,\n    message: `Task execution failed: ${taskError.message}`,\n    data: {\n      error_details: taskError.message,\n      requested_by: sourceAgent,\n      timestamp: new Date().toISOString()\n    }\n  },\n  id: a2aRequestId\n};\n\nreturn { a2aResponse };"
+      },
+      "id": "format-task-error-response",
+      "name": "Formatear Respuesta de Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Formatear respuesta directa (sin ejecución de tarea)\nconst methodResponse = $('Procesar Método A2A').item.json.a2aResponse;\n\nreturn { a2aResponse: methodResponse };"
+      },
+      "id": "format-direct-response",
+      "name": "Formatear Respuesta Directa",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json.a2aResponse) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "additionalHeaders": true,
+            "headers": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "X-Agent-ID",
+                "value": "A01"
+              },
+              {
+                "name": "X-Response-Time",
+                "value": "{{ new Date().toISOString() }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-a2a-success",
+      "name": "Respuesta A2A Exitosa",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1300,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Formatear error de validación A2A\nconst parseError = $('Parsear Solicitud A2A').item.json;\n\nconst errorResponse = {\n  jsonrpc: '2.0',\n  error: {\n    code: parseError.errorCode,\n    message: parseError.errorMessage,\n    data: parseError.supportedMethods ? {\n      supportedMethods: parseError.supportedMethods\n    } : null\n  },\n  id: parseError.requestId\n};\n\nreturn { a2aResponse: errorResponse };"
+      },
+      "id": "format-validation-error",
+      "name": "Formatear Error de Validación",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -200,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json.a2aResponse) }}",
+        "options": {
+          "responseCode": "={{ $json.a2aResponse.error && $json.a2aResponse.error.code === -32001 ? 401 : 400 }}",
+          "responseHeaders": {
+            "additionalHeaders": true,
+            "headers": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "X-Agent-ID",
+                "value": "A01"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-a2a-error",
+      "name": "Respuesta A2A Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        400
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - A2A Server": {
+      "main": [
+        [
+          {
+            "node": "Parsear Solicitud A2A",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parsear Solicitud A2A": {
+      "main": [
+        [
+          {
+            "node": "¿Solicitud A2A Válida?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Solicitud A2A Válida?": {
+      "main": [
+        [
+          {
+            "node": "Procesar Método A2A",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Formatear Error de Validación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Procesar Método A2A": {
+      "main": [
+        [
+          {
+            "node": "¿Necesita Ejecutar Tarea?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "¿Necesita Consultar Tarea?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Necesita Ejecutar Tarea?": {
+      "main": [
+        [
+          {
+            "node": "Ejecutar Master-Task-Orchestrator",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Formatear Respuesta Directa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Necesita Consultar Tarea?": {
+      "main": [
+        [
+          {
+            "node": "Consultar Estado de Tarea",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Ejecutar Master-Task-Orchestrator": {
+      "main": [
+        [
+          {
+            "node": "Formatear Respuesta de Éxito",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Formatear Respuesta de Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar Estado de Tarea": {
+      "main": [
+        [
+          {
+            "node": "Formatear Respuesta de Consulta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatear Respuesta de Éxito": {
+      "main": [
+        [
+          {
+            "node": "Respuesta A2A Exitosa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatear Respuesta de Consulta": {
+      "main": [
+        [
+          {
+            "node": "Respuesta A2A Exitosa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatear Respuesta de Error": {
+      "main": [
+        [
+          {
+            "node": "Respuesta A2A Exitosa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatear Respuesta Directa": {
+      "main": [
+        [
+          {
+            "node": "Respuesta A2A Exitosa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatear Error de Validación": {
+      "main": [
+        [
+          {
+            "node": "Respuesta A2A Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "a2a-handler-v1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "a01-handle-a2a-request",
+  "tags": [
+    {
+      "id": "agent-01",
+      "name": "Agent 01"
+    },
+    {
+      "id": "a2a",
+      "name": "A2A"
+    },
+    {
+      "id": "protocol-adapter",
+      "name": "Protocol Adapter"
+    }
+  ]
+}

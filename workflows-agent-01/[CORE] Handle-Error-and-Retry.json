@@ -1,0 +1,510 @@
+{
+  "name": "[CORE] Handle-Error-and-Retry",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "start-error-handler",
+      "name": "Inicio - Manejo de Errores",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Procesar contexto del error recibido\nconst input = $input.item.json;\n\n// Extraer parámetros del contexto de error\nconst {\n  task_id,\n  error_message,\n  workflow_to_retry_id,\n  workflow_params,\n  agent_id,\n  retry_context\n} = input;\n\n// Validar que tenemos la información mínima necesaria\nif (!task_id || !error_message) {\n  throw new Error('Missing required error context: task_id or error_message');\n}\n\n// Configuración de reintentos\nconst MAX_RETRIES = 3;\nconst BASE_DELAY_MS = 5000; // 5 segundos base\nconst BACKOFF_MULTIPLIER = 2;\n\n// Preparar datos para consulta de estado actual\nconst errorContext = {\n  task_id,\n  error_message: error_message || 'Unknown error',\n  workflow_to_retry_id: workflow_to_retry_id || null,\n  workflow_params: workflow_params || {},\n  agent_id: agent_id || 'UNKNOWN',\n  retry_context: retry_context || 'general_failure',\n  max_retries: MAX_RETRIES,\n  base_delay_ms: BASE_DELAY_MS,\n  backoff_multiplier: BACKOFF_MULTIPLIER,\n  timestamp: new Date().toISOString()\n};\n\nconsole.log('Error context processed:', {\n  task_id,\n  agent_id,\n  retry_context,\n  has_workflow_params: Object.keys(workflow_params || {}).length > 0\n});\n\nreturn errorContext;"
+      },
+      "id": "process-error-context",
+      "name": "Procesar Contexto de Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -300,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "[CORE] Log-Event",
+        "data": "={{ JSON.stringify({\n  log_level: 'WARN',\n  log_message: `Error handling initiated: ${$json.error_message}`,\n  task_id: $json.task_id,\n  agent_id: $json.agent_id,\n  details: {\n    retry_context: $json.retry_context,\n    workflow_to_retry: $json.workflow_to_retry_id,\n    error_timestamp: $json.timestamp\n  }\n}) }}"
+      },
+      "id": "log-error-start",
+      "name": "Log Inicio de Manejo de Error",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        0,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "database",
+        "operation": "select",
+        "tableId": "tasks",
+        "filterType": "manual",
+        "matchConditions": [
+          {
+            "column": "task_id",
+            "operator": "eq",
+            "value": "={{ $('Procesar Contexto de Error').item.json.task_id }}"
+          }
+        ],
+        "options": {
+          "selectColumns": ["task_id", "retry_count", "status", "last_retry_attempt_at", "created_at"]
+        }
+      },
+      "id": "consultar-estado-tarea",
+      "name": "Consultar Estado de Tarea",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        300,
+        200
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "9XlWn9W6ZDhQTb8Z",
+          "name": "Supabase EPRM"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Analizar estado de reintentos y calcular próximo intento\nconst errorContext = $('Procesar Contexto de Error').item.json;\nconst taskData = $input.item.json[0];\n\nif (!taskData) {\n  throw new Error('Task not found in database');\n}\n\nconst currentRetryCount = taskData.retry_count || 0;\nconst maxRetries = errorContext.max_retries;\nconst baseDelayMs = errorContext.base_delay_ms;\nconst backoffMultiplier = errorContext.backoff_multiplier;\n\n// Determinar si podemos reintentar\nconst canRetry = currentRetryCount < maxRetries;\nconst newRetryCount = currentRetryCount + 1;\n\n// Calcular delay con backoff exponencial\nconst delayMs = baseDelayMs * Math.pow(backoffMultiplier, currentRetryCount);\nconst nextRetryTime = new Date(Date.now() + delayMs);\n\nconst retryAnalysis = {\n  ...errorContext,\n  current_retry_count: currentRetryCount,\n  new_retry_count: newRetryCount,\n  can_retry: canRetry,\n  delay_ms: delayMs,\n  next_retry_time: nextRetryTime.toISOString(),\n  task_status: taskData.status,\n  last_retry_attempt: taskData.last_retry_attempt_at,\n  task_created: taskData.created_at\n};\n\nconsole.log('Retry analysis:', {\n  task_id: errorContext.task_id,\n  current_retry_count: currentRetryCount,\n  can_retry: canRetry,\n  delay_seconds: Math.round(delayMs / 1000),\n  next_retry_time: nextRetryTime.toISOString()\n});\n\nreturn retryAnalysis;"
+      },
+      "id": "analizar-reintentos",
+      "name": "Analizar Estado de Reintentos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "can-retry-check",
+              "leftValue": "={{ $('Analizar Estado de Reintentos').item.json.can_retry }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-puede-reintentar",
+      "name": "¿Puede Reintentar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        900,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "database",
+        "operation": "update",
+        "tableId": "tasks",
+        "filterType": "manual",
+        "matchConditions": [
+          {
+            "column": "task_id",
+            "operator": "eq",
+            "value": "={{ $('Analizar Estado de Reintentos').item.json.task_id }}"
+          }
+        ],
+        "updateData": {
+          "retry_count": "={{ $('Analizar Estado de Reintentos').item.json.new_retry_count }}",
+          "last_retry_attempt_at": "={{ new Date().toISOString() }}",
+          "next_retry_schedule_at": "={{ $('Analizar Estado de Reintentos').item.json.next_retry_time }}",
+          "status": "retrying"
+        }
+      },
+      "id": "actualizar-para-reintento",
+      "name": "Actualizar para Reintento",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        100
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "9XlWn9W6ZDhQTb8Z",
+          "name": "Supabase EPRM"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowId": "[CORE] Log-Event",
+        "data": "={{ JSON.stringify({\n  log_level: 'INFO',\n  log_message: `Scheduling retry ${$('Analizar Estado de Reintentos').item.json.new_retry_count}/${$('Analizar Estado de Reintentos').item.json.max_retries}`,\n  task_id: $('Analizar Estado de Reintentos').item.json.task_id,\n  agent_id: $('Analizar Estado de Reintentos').item.json.agent_id,\n  details: {\n    retry_count: $('Analizar Estado de Reintentos').item.json.new_retry_count,\n    delay_seconds: Math.round($('Analizar Estado de Reintentos').item.json.delay_ms / 1000),\n    next_retry_time: $('Analizar Estado de Reintentos').item.json.next_retry_time\n  }\n}) }}"
+      },
+      "id": "log-retry-scheduled",
+      "name": "Log Reintento Programado",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        1500,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "amount": "={{ Math.round($('Analizar Estado de Reintentos').item.json.delay_ms / 1000) }}",
+        "unit": "seconds"
+      },
+      "id": "wait-for-retry",
+      "name": "Esperar para Reintento",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [
+        1800,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ $('Analizar Estado de Reintentos').item.json.workflow_to_retry_id }}",
+        "data": "={{ JSON.stringify($('Analizar Estado de Reintentos').item.json.workflow_params) }}"
+      },
+      "id": "reejecutar-workflow",
+      "name": "Re-ejecutar Workflow Original",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        2100,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "database",
+        "operation": "update",
+        "tableId": "tasks",
+        "filterType": "manual",
+        "matchConditions": [
+          {
+            "column": "task_id",
+            "operator": "eq",
+            "value": "={{ $('Analizar Estado de Reintentos').item.json.task_id }}"
+          }
+        ],
+        "updateData": {
+          "status": "completed_success",
+          "completed_at": "={{ new Date().toISOString() }}",
+          "result": "={{ JSON.stringify($json) }}"
+        }
+      },
+      "id": "actualizar-exito-retry",
+      "name": "Actualizar Éxito de Reintento",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2400,
+        100
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "9XlWn9W6ZDhQTb8Z",
+          "name": "Supabase EPRM"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowId": "[CORE] Log-Event",
+        "data": "={{ JSON.stringify({\n  log_level: 'INFO',\n  log_message: 'Task completed successfully after retry',\n  task_id: $('Analizar Estado de Reintentos').item.json.task_id,\n  agent_id: $('Analizar Estado de Reintentos').item.json.agent_id,\n  details: {\n    retry_count: $('Analizar Estado de Reintentos').item.json.new_retry_count,\n    total_retries: $('Analizar Estado de Reintentos').item.json.new_retry_count,\n    success_after_retry: true\n  }\n}) }}"
+      },
+      "id": "log-retry-success",
+      "name": "Log Éxito de Reintento",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        2700,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "[CORE] Handle-Error-and-Retry",
+        "data": "={{ JSON.stringify({\n  task_id: $('Analizar Estado de Reintentos').item.json.task_id,\n  error_message: 'Retry attempt failed',\n  workflow_to_retry_id: $('Analizar Estado de Reintentos').item.json.workflow_to_retry_id,\n  workflow_params: $('Analizar Estado de Reintentos').item.json.workflow_params,\n  agent_id: $('Analizar Estado de Reintentos').item.json.agent_id,\n  retry_context: $('Analizar Estado de Reintentos').item.json.retry_context + '_retry_failed'\n}) }}"
+      },
+      "id": "handle-retry-failure",
+      "name": "Manejar Fallo de Reintento",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        2100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "[CORE] Log-Event",
+        "data": "={{ JSON.stringify({\n  log_level: 'ERROR',\n  log_message: `Maximum retries (${$('Analizar Estado de Reintentos').item.json.max_retries}) exceeded - task permanently failed`,\n  task_id: $('Analizar Estado de Reintentos').item.json.task_id,\n  agent_id: $('Analizar Estado de Reintentos').item.json.agent_id,\n  details: {\n    original_error: $('Analizar Estado de Reintentos').item.json.error_message,\n    final_retry_count: $('Analizar Estado de Reintentos').item.json.current_retry_count,\n    max_retries: $('Analizar Estado de Reintentos').item.json.max_retries,\n    permanent_failure: true\n  }\n}) }}"
+      },
+      "id": "log-permanent-failure",
+      "name": "Log Fallo Permanente",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "database",
+        "operation": "update",
+        "tableId": "tasks",
+        "filterType": "manual",
+        "matchConditions": [
+          {
+            "column": "task_id",
+            "operator": "eq",
+            "value": "={{ $('Analizar Estado de Reintentos').item.json.task_id }}"
+          }
+        ],
+        "updateData": {
+          "status": "completed_failed",
+          "completed_at": "={{ new Date().toISOString() }}",
+          "error_message": "={{ $('Analizar Estado de Reintentos').item.json.error_message }}",
+          "final_retry_count": "={{ $('Analizar Estado de Reintentos').item.json.current_retry_count }}"
+        }
+      },
+      "id": "actualizar-fallo-definitivo",
+      "name": "Actualizar Fallo Definitivo",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1500,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "9XlWn9W6ZDhQTb8Z",
+          "name": "Supabase EPRM"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowId": "[MCP-SUB] A13-SendNotification",
+        "data": "={{ JSON.stringify({\n  notification_type: 'critical_task_failure',\n  recipient_type: 'admin',\n  organization_id: null,\n  subject: `Critical Task Failure: ${$('Analizar Estado de Reintentos').item.json.task_id}`,\n  message: `Task ${$('Analizar Estado de Reintentos').item.json.task_id} has permanently failed after ${$('Analizar Estado de Reintentos').item.json.current_retry_count} retries. Error: ${$('Analizar Estado de Reintentos').item.json.error_message}`,\n  details: {\n    task_id: $('Analizar Estado de Reintentos').item.json.task_id,\n    agent_id: $('Analizar Estado de Reintentos').item.json.agent_id,\n    error_message: $('Analizar Estado de Reintentos').item.json.error_message,\n    retry_count: $('Analizar Estado de Reintentos').item.json.current_retry_count,\n    failure_timestamp: new Date().toISOString()\n  }\n}) }}",
+        "options": {
+          "continueOnFail": true
+        }
+      },
+      "id": "notificar-fallo-critico",
+      "name": "Notificar Fallo Crítico",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        1800,
+        300
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Inicio - Manejo de Errores": {
+      "main": [
+        [
+          {
+            "node": "Procesar Contexto de Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Procesar Contexto de Error": {
+      "main": [
+        [
+          {
+            "node": "Log Inicio de Manejo de Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Inicio de Manejo de Error": {
+      "main": [
+        [
+          {
+            "node": "Consultar Estado de Tarea",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar Estado de Tarea": {
+      "main": [
+        [
+          {
+            "node": "Analizar Estado de Reintentos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analizar Estado de Reintentos": {
+      "main": [
+        [
+          {
+            "node": "¿Puede Reintentar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Puede Reintentar?": {
+      "main": [
+        [
+          {
+            "node": "Actualizar para Reintento",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Fallo Permanente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Actualizar para Reintento": {
+      "main": [
+        [
+          {
+            "node": "Log Reintento Programado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Reintento Programado": {
+      "main": [
+        [
+          {
+            "node": "Esperar para Reintento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Esperar para Reintento": {
+      "main": [
+        [
+          {
+            "node": "Re-ejecutar Workflow Original",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Re-ejecutar Workflow Original": {
+      "main": [
+        [
+          {
+            "node": "Actualizar Éxito de Reintento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Manejar Fallo de Reintento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Actualizar Éxito de Reintento": {
+      "main": [
+        [
+          {
+            "node": "Log Éxito de Reintento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Fallo Permanente": {
+      "main": [
+        [
+          {
+            "node": "Actualizar Fallo Definitivo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Actualizar Fallo Definitivo": {
+      "main": [
+        [
+          {
+            "node": "Notificar Fallo Crítico",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "core-error-handler-v1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "core-handle-error-and-retry",
+  "tags": [
+    {
+      "id": "core",
+      "name": "Core"
+    },
+    {
+      "id": "error-handling",
+      "name": "Error Handling"
+    },
+    {
+      "id": "resilience",
+      "name": "Resilience"
+    }
+  ]
+}

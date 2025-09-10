@@ -1,0 +1,182 @@
+{
+  "name": "[CORE] Log-Event",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "start-log-event",
+      "name": "Inicio - Log Event",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [
+        -400,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Procesar parámetros de logging\nconst input = $input.item.json;\n\n// Extraer parámetros\nconst {\n  log_level,\n  log_message,\n  task_id,\n  agent_id,\n  details\n} = input;\n\n// Validación de parámetros obligatorios\nif (!log_level || !log_message) {\n  throw new Error('Missing required logging parameters: log_level or log_message');\n}\n\n// Validar log_level\nconst validLogLevels = ['DEBUG', 'INFO', 'WARN', 'ERROR', 'CRITICAL'];\nif (!validLogLevels.includes(log_level.toUpperCase())) {\n  throw new Error(`Invalid log_level: ${log_level}. Must be one of: ${validLogLevels.join(', ')}`);\n}\n\n// Generar trace_id único para este evento de log\nconst trace_id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;\n\n// Preparar datos del log\nconst logData = {\n  log_level: log_level.toUpperCase(),\n  log_message: log_message.trim(),\n  task_id: task_id || null,\n  agent_id: agent_id || null,\n  details: details || {},\n  trace_id: trace_id,\n  timestamp: new Date().toISOString(),\n  source: 'n8n-workflow'\n};\n\n// Añadir contexto adicional si está disponible\nif ($workflow && $workflow.id) {\n  logData.details.workflow_id = $workflow.id;\n}\n\nif ($workflow && $workflow.name) {\n  logData.details.workflow_name = $workflow.name;\n}\n\n// Log local para debugging\nconsole.log(`[${logData.log_level}] ${logData.log_message}`, {\n  trace_id: logData.trace_id,\n  task_id: logData.task_id,\n  agent_id: logData.agent_id\n});\n\nreturn logData;"
+      },
+      "id": "validate-log-params",
+      "name": "Validar Parámetros de Log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -100,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "database",
+        "operation": "runSql",
+        "query": "SELECT public.log_event($1, $2, $3, $4, $5, $6, $7) as log_id;",
+        "additionalFields": {
+          "queryParams": "={{ JSON.stringify([\n  $json.log_level,\n  $json.log_message,\n  $json.task_id,\n  $json.agent_id,\n  JSON.stringify($json.details),\n  $json.trace_id,\n  $json.timestamp\n]) }}"
+        }
+      },
+      "id": "call-log-event-function",
+      "name": "Llamar public.log_event",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        200,
+        200
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "9XlWn9W6ZDhQTb8Z",
+          "name": "Supabase EPRM"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Procesar respuesta del logging\nconst logResult = $input.item.json[0];\nconst originalLogData = $('Validar Parámetros de Log').item.json;\n\nif (!logResult || !logResult.log_id) {\n  throw new Error('Failed to create log entry - no log_id returned');\n}\n\n// Preparar respuesta de éxito\nconst response = {\n  success: true,\n  log_id: logResult.log_id,\n  trace_id: originalLogData.trace_id,\n  log_level: originalLogData.log_level,\n  message: originalLogData.log_message,\n  timestamp: originalLogData.timestamp,\n  task_id: originalLogData.task_id,\n  agent_id: originalLogData.agent_id\n};\n\n// Log de confirmación\nconsole.log(`Log event recorded successfully:`, {\n  log_id: response.log_id,\n  trace_id: response.trace_id,\n  level: response.log_level\n});\n\nreturn response;"
+      },
+      "id": "process-log-response",
+      "name": "Procesar Respuesta de Log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        500,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Manejar error en el logging\nconst originalLogData = $('Validar Parámetros de Log').item.json;\nconst error = $input.item.error || 'Unknown logging error';\n\n// Crear respuesta de error\nconst errorResponse = {\n  success: false,\n  error: error.message || error,\n  trace_id: originalLogData.trace_id,\n  log_level: originalLogData.log_level,\n  message: originalLogData.log_message,\n  timestamp: new Date().toISOString(),\n  original_data: originalLogData\n};\n\n// Log local del error (fallback)\nconsole.error(`Failed to log event to database:`, {\n  error: errorResponse.error,\n  trace_id: errorResponse.trace_id,\n  original_message: originalLogData.log_message\n});\n\n// En caso de fallo crítico del sistema de logging,\n// al menos tenemos el log local en n8n\nreturn errorResponse;"
+      },
+      "id": "handle-log-error",
+      "name": "Manejar Error de Log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        200,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Consolidar resultado final\nconst response = $input.item.json;\n\n// Independientemente del resultado (éxito o error),\n// devolvemos una respuesta estructurada\nconst finalResult = {\n  logging_completed: true,\n  success: response.success || false,\n  log_id: response.log_id || null,\n  trace_id: response.trace_id,\n  timestamp: response.timestamp || new Date().toISOString(),\n  error: response.error || null\n};\n\n// Log final de estado\nif (finalResult.success) {\n  console.log(`✅ Log event completed successfully - ID: ${finalResult.log_id}`);\n} else {\n  console.log(`❌ Log event failed - Trace: ${finalResult.trace_id}`);\n}\n\nreturn finalResult;"
+      },
+      "id": "finalize-log-result",
+      "name": "Finalizar Resultado de Log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        200
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Inicio - Log Event": {
+      "main": [
+        [
+          {
+            "node": "Validar Parámetros de Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar Parámetros de Log": {
+      "main": [
+        [
+          {
+            "node": "Llamar public.log_event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Llamar public.log_event": {
+      "main": [
+        [
+          {
+            "node": "Procesar Respuesta de Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Manejar Error de Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Procesar Respuesta de Log": {
+      "main": [
+        [
+          {
+            "node": "Finalizar Resultado de Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manejar Error de Log": {
+      "main": [
+        [
+          {
+            "node": "Finalizar Resultado de Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "core-log-event-v1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "core-log-event",
+  "tags": [
+    {
+      "id": "core",
+      "name": "Core"
+    },
+    {
+      "id": "logging",
+      "name": "Logging"
+    },
+    {
+      "id": "observability",
+      "name": "Observability"
+    }
+  ]
+}

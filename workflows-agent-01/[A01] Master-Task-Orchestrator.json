@@ -1,0 +1,200 @@
+{
+  "name": "[A01] Master-Task-Orchestrator",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "task-orchestrator",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-ingesta",
+      "name": "Webhook - Ingesta de Tarea",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        -1200,
+        200
+      ],
+      "webhookId": "task-orchestrator-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extraer y validar parámetros de entrada\nconst body = $input.item.json.body || {};\nconst headers = $input.item.json.headers || {};\n\n// Parámetros requeridos\nconst { organization_id, creator_user_id, task_type } = body;\n\n// Validación de campos obligatorios\nif (!organization_id || !creator_user_id || !task_type) {\n  console.log('Validación fallida: Faltan campos requeridos', {\n    organization_id: !!organization_id,\n    creator_user_id: !!creator_user_id,\n    task_type: !!task_type\n  });\n  \n  return {\n    isValid: false,\n    error: 'Input validation failed: Missing organization_id, creator_user_id, or task_type',\n    missing_fields: {\n      organization_id: !organization_id,\n      creator_user_id: !creator_user_id,\n      task_type: !task_type\n    }\n  };\n}\n\n// Parámetros opcionales con valores por defecto\nconst parameters = body.parameters || {};\nconst priority = body.priority || 0;\nconst project_id = body.project_id || null;\n\n// Validación adicional del UUID format (básica)\nconst uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;\n\nif (!uuidRegex.test(organization_id)) {\n  return {\n    isValid: false,\n    error: 'Invalid organization_id format - must be a valid UUID'\n  };\n}\n\nif (!uuidRegex.test(creator_user_id)) {\n  return {\n    isValid: false,\n    error: 'Invalid creator_user_id format - must be a valid UUID'\n  };\n}\n\nif (project_id && !uuidRegex.test(project_id)) {\n  return {\n    isValid: false,\n    error: 'Invalid project_id format - must be a valid UUID'\n  };\n}\n\n// Si todo es válido, estructurar los datos\nconst structuredData = {\n  organization_id,\n  creator_user_id,\n  task_type,\n  parameters,\n  priority,\n  project_id,\n  timestamp: new Date().toISOString(),\n  request_source: headers['user-agent'] || 'unknown'\n};\n\nconsole.log('Parámetros validados y estructurados exitosamente:', {\n  task_type,\n  organization_id,\n  creator_user_id,\n  priority,\n  has_parameters: Object.keys(parameters).length > 0\n});\n\nreturn {\n  isValid: true,\n  data: structuredData\n};"
+      },
+      "id": "validar-parametros",
+      "name": "Validar y Estructurar Parámetros",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -900,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "validation-check",
+              "leftValue": "={{ $('Validar y Estructurar Parámetros').item.json.isValid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-parametros-validos",
+      "name": "¿Son Válidos los Parámetros?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -600,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "database",
+        "operation": "runSql",
+        "query": "SELECT * FROM public.route_task_request($1::jsonb);",
+        "additionalFields": {
+          "queryParams": "={{ JSON.stringify([$('Validar y Estructurar Parámetros').item.json.data]) }}"
+        }
+      },
+      "id": "route-task-request",
+      "name": "Llamar route_task_request",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        100
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "9XlWn9W6ZDhQTb8Z",
+          "name": "Supabase EPRM"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "success-check",
+              "leftValue": "={{ $json[0] && $json[0].success }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-asignacion-exitosa",
+      "name": "¿Asignación Exitosa?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        0,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Procesar resultado de route_task_request\nconst result = $input.item.json[0];\n\nif (!result) {\n  throw new Error('No result returned from route_task_request');\n}\n\nconst {\n  task_id,\n  assigned_agent_id,\n  agent_capability,\n  success,\n  error_message\n} = result;\n\n// Validar campos críticos\nif (!success) {\n  throw new Error(`Task routing failed: ${error_message || 'Unknown error'}`);\n}\n\nif (!task_id || !assigned_agent_id) {\n  throw new Error('Missing critical fields in route_task_request response');\n}\n\n// Determinar nombre del subworkflow\nlet subworkflow_name = '';\nif (agent_capability) {\n  // Convertir agent_capability a CamelCase para el nombre del subworkflow\n  const words = agent_capability.split('_');\n  const camelCase = words.map(word => \n    word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()\n  ).join('');\n  \n  subworkflow_name = `[MCP-SUB] ${assigned_agent_id}-${camelCase}`;\n} else {\n  // Fallback si no hay agent_capability definida\n  subworkflow_name = `[MCP-SUB] ${assigned_agent_id}-DefaultTask`;\n}\n\n// Obtener parámetros originales para pasarlos al subworkflow\nconst originalData = $input.first().json.data;\nconst original_parameters = originalData?.parameters || {};\n\nconsole.log('Subworkflow determinado:', {\n  task_id,\n  assigned_agent_id,\n  agent_capability,\n  subworkflow_name,\n  parameter_count: Object.keys(original_parameters).length\n});\n\nreturn {\n  task_id,\n  assigned_agent_id,\n  agent_capability,\n  subworkflow_name,\n  original_parameters,\n  routing_success: true,\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "determinar-subworkflow",
+      "name": "Determinar Subworkflow de Agente",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ $json.subworkflow_name }}",
+        "data": "={{ JSON.stringify({\n  task_id: $json.task_id,\n  parameters: $json.original_parameters,\n  agent_id: $json.assigned_agent_id,\n  capability: $json.agent_capability,\n  timestamp: $json.timestamp\n}) }}"
+      },
+      "id": "ejecutar-subworkflow",
+      "name": "Ejecutar Subworkflow de Agente",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        600,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "database",
+        "operation": "update",
+        "tableId": "tasks",
+        "filterType": "manual",
+        "matchConditions": [
+          {
+            "column": "task_id",
+            "operator": "eq",
+            "value": "={{ $('Determinar Subworkflow de Agente').item.json.task_id }}"
+          }
+        ],
+        "updateData": {
+          "status": "completed_success",
+          "completed_at": "={{ new Date().toISOString() }}",
+          "result": "={{ JSON.stringify($json) }}"
+        }
+      },
+      "id": "actualizar-tarea-exito",
+      "name": "Actualizar Tarea a Éxito",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        900,
+        0
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "9XlWn9W6ZDhQTb8Z",
+          "name": "Supabase EPRM"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowId": "[CORE] Log-Event",
+        "data": "={{ JSON.stringify({\n  log_level: 'INFO',\n  log_message: 'Task orchestration completed successfully',\n  task_id: $('Determinar Subworkflow de Agente').item.json.task_id,\n  agent_id: 'A01',\n  details: {\n    assigned_agent: $('Determinar Subworkflow de Agente').item.json.assigned_agent_id,\n    executed_subworkflow: $('Determinar Subworkflow de Agente').item.json.subworkflow_name,\n    completion_time: new Date().toISOString()\n  }\n}) }}"
+      },
+      "id": "log-exito",
+      "name": "Log de Éxito",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  success: true,\n  task_id: $('Determinar Subworkflow de Agente').item.json.task_id,\n  assigned_agent_id: $('Determinar Subworkflow de Agente').item.json.assigned_agent_id,\n  status: 'completed_success',\n  message: 'Task orchestrated and executed successfully',\n  timestamp: new Date().toISOString()\n}) }}",\n        \"options\": {\n          \"responseCode\": 200,\n          \"responseHeaders\": {\n            \"additionalHeaders\": true,\n            \"headers\": [\n              {\n                \"name\": \"Content-Type\",\n                \"value\": \"application/json\"\n              }\n            ]\n          }\n        }\n      },\n      \"id\": \"respuesta-exito\",\n      \"name\": \"Respuesta de Éxito\",\n      \"type\": \"n8n-nodes-base.respondToWebhook\",\n      \"typeVersion\": 1,\n      \"position\": [\n        1500,\n        0\n      ]\n    },\n    {\n      \"parameters\": {\n        \"workflowId\": \"[CORE] Handle-Error-and-Retry\",\n        \"data\": \"={{ JSON.stringify({\n  task_id: $('Llamar route_task_request').item.json[0]?.task_id || null,\n  error_message: $('Llamar route_task_request').item.json[0]?.error_message || 'Unknown routing error',\n  workflow_to_retry_id: $workflow.id,\n  workflow_params: $('Validar y Estructurar Parámetros').item.json.data,\n  agent_id: 'A01',\n  retry_context: 'task_routing_failure'\n}) }}\"\n      },\n      \"id\": \"handle-routing-error\",\n      \"name\": \"Manejar Error de Routing\",\n      \"type\": \"n8n-nodes-base.executeWorkflow\",\n      \"typeVersion\": 1,\n      \"position\": [\n        300,\n        200\n      ]\n    },\n    {\n      \"parameters\": {\n        \"workflowId\": \"[CORE] Handle-Error-and-Retry\",\n        \"data\": \"={{ JSON.stringify({\n  task_id: $('Determinar Subworkflow de Agente').item.json.task_id,\n  error_message: 'Subworkflow execution failed',\n  workflow_to_retry_id: $workflow.id,\n  workflow_params: $('Validar y Estructurar Parámetros').item.json.data,\n  agent_id: $('Determinar Subworkflow de Agente').item.json.assigned_agent_id,\n  retry_context: 'subworkflow_execution_failure'\n}) }}\"\n      },\n      \"id\": \"handle-subworkflow-error\",\n      \"name\": \"Manejar Error de Subworkflow\",\n      \"type\": \"n8n-nodes-base.executeWorkflow\",\n      \"typeVersion\": 1,\n      \"position\": [\n        600,\n        200\n      ]\n    },\n    {\n      \"parameters\": {\n        \"respondWith\": \"json\",\n        \"responseBody\": \"={{ JSON.stringify({\n  success: false,\n  error: $('Validar y Estructurar Parámetros').item.json.error,\n  details: $('Validar y Estructurar Parámetros').item.json.missing_fields || null,\n  timestamp: new Date().toISOString()\n}) }}\",\n        \"options\": {\n          \"responseCode\": 400,\n          \"responseHeaders\": {\n            \"additionalHeaders\": true,\n            \"headers\": [\n              {\n                \"name\": \"Content-Type\",\n                \"value\": \"application/json\"\n              }\n            ]\n          }\n        }\n      },\n      \"id\": \"respuesta-error-validacion\",\n      \"name\": \"Respuesta Error de Validación\",\n      \"type\": \"n8n-nodes-base.respondToWebhook\",\n      \"typeVersion\": 1,\n      \"position\": [\n        -600,\n        400\n      ]\n    }\n  ],\n  \"pinData\": {},\n  \"connections\": {\n    \"Webhook - Ingesta de Tarea\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Validar y Estructurar Parámetros\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Validar y Estructurar Parámetros\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"¿Son Válidos los Parámetros?\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"¿Son Válidos los Parámetros?\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Llamar route_task_request\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ],\n        [\n          {\n            \"node\": \"Respuesta Error de Validación\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Llamar route_task_request\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"¿Asignación Exitosa?\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"¿Asignación Exitosa?\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Determinar Subworkflow de Agente\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ],\n        [\n          {\n            \"node\": \"Manejar Error de Routing\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Determinar Subworkflow de Agente\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Ejecutar Subworkflow de Agente\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Ejecutar Subworkflow de Agente\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Actualizar Tarea a Éxito\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ],\n      \"error\": [\n        [\n          {\n            \"node\": \"Manejar Error de Subworkflow\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Actualizar Tarea a Éxito\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Log de Éxito\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Log de Éxito\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Respuesta de Éxito\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    }\n  },\n  \"active\": true,\n  \"settings\": {\n    \"executionOrder\": \"v1\"\n  },\n  \"versionId\": \"a01-master-orchestrator-v1\",\n  \"meta\": {\n    \"templateCredsSetupCompleted\": true\n  },\n  \"id\": \"a01-master-task-orchestrator\",\n  \"tags\": [\n    {\n      \"id\": \"agent-01\",\n      \"name\": \"Agent 01\"\n    },\n    {\n      \"id\": \"orchestration\",\n      \"name\": \"Orchestration\"\n    },\n    {\n      \"id\": \"core\",\n      \"name\": \"Core\"\n    }\n  ]\n}"
