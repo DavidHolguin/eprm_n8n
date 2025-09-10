@@ -20,12 +20,12 @@
     },
     {
       "parameters": {
-        "functionCode": "const body = $json.body || {};\nconst { organization_id, creator_user_id, task_type } = body;\n\n// 1. Validar la presencia de campos clave\nif (!organization_id || !creator_user_id || !task_type) {\n  $logger.warn('Validación fallida: Faltan campos requeridos.', body);\n  return [{ \n    json: {\n      isValid: false,\n      error: 'Input validation failed: Missing organization_id, creator_user_id, or task_type.'\n    }\n  }];\n}\n\n// 2. Si la validación es exitosa, retornar el objeto estructurado\nconst parameters = body.parameters || {};\nconst priority = body.priority || 0;\nconst project_id = body.project_id || null;\n\nreturn [{ \n  json: {\n    isValid: true,\n    data: {\n      organization_id,\n      creator_user_id,\n      task_type,\n      parameters,\n      priority,\n      project_id,\n      timestamp: new Date().toISOString()\n    }\n  }\n}];"
+        "jsCode": "const body = $input.item.json.body || {};\nconst { organization_id, creator_user_id, task_type } = body;\n\n// 1. Validar la presencia de campos clave\nif (!organization_id || !creator_user_id || !task_type) {\n  console.log('Validación fallida: Faltan campos requeridos.', body);\n  return {\n    isValid: false,\n    error: 'Input validation failed: Missing organization_id, creator_user_id, or task_type.'\n  };\n}\n\n// 2. Si la validación es exitosa, retornar el objeto estructurado\nconst parameters = body.parameters || {};\nconst priority = body.priority || 0;\nconst project_id = body.project_id || null;\n\nreturn {\n  isValid: true,\n  data: {\n    organization_id,\n    creator_user_id,\n    task_type,\n    parameters,\n    priority,\n    project_id,\n    timestamp: new Date().toISOString()\n  }\n};"
       },
       "id": "0dd8959c-ea01-4dbc-b206-f7e1f1a7bc5a",
       "name": "1. Validar y Estructurar Parámetros",
       "type": "n8n-nodes-base.code",
-      "typeVersion": 1,
+      "typeVersion": 2,
       "position": [
         -800,
         80
@@ -37,15 +37,8 @@
         "httpMethod": "POST",
         "path": "/rpc/route_task_request",
         "sendBody": true,
-        "jsonParameters": true,
-        "bodyParameters": {
-          "parameters": [
-            {
-              "name": "",
-              "value": "={{ $('1. Validar y Estructurar Parámetros').item.json.data }}"
-            }
-          ]
-        }
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('1. Validar y Estructurar Parámetros').item.json.data) }}"
       },
       "id": "f5c4dd43-96c2-44d4-a6bf-8acf0c97a0e9",
       "name": "Llamar a public.route_task_request",
@@ -128,12 +121,12 @@
     },
     {
       "parameters": {
-        "functionCode": "const result = $json.body;\nconst task_id = result.task_id;\nconst assigned_agent_id = result.assigned_agent_id;\nconst agent_capability = result.agent_capability;\nif (!task_id || !assigned_agent_id) {\n  throw new Error('No task_id or assigned_agent_id returned from route_task_request');\n}\nlet subworkflow_name = '';\nif (agent_capability) {\n  const words = agent_capability.split('_');\n  const camelCase = words.map(word => \n    word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()\n  ).join('');\n  subworkflow_name = `[MCP-SUB] ${assigned_agent_id}-${camelCase}`;\n}\nreturn {\n  task_id,\n  assigned_agent_id,\n  agent_capability,\n  subworkflow_name,\n  original_parameters: $('1. Validar y Estructurar Parámetros').item.json.data.parameters\n};"
+        "jsCode": "const result = $input.item.json.body;\nconst task_id = result.task_id;\nconst assigned_agent_id = result.assigned_agent_id;\nconst agent_capability = result.agent_capability;\nif (!task_id || !assigned_agent_id) {\n  throw new Error('No task_id or assigned_agent_id returned from route_task_request');\n}\nlet subworkflow_name = '';\nif (agent_capability) {\n  const words = agent_capability.split('_');\n  const camelCase = words.map(word => \n    word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()\n  ).join('');\n  subworkflow_name = `[MCP-SUB] ${assigned_agent_id}-${camelCase}`;\n}\nreturn {\n  task_id,\n  assigned_agent_id,\n  agent_capability,\n  subworkflow_name,\n  original_parameters: $input.first().json.data?.parameters || {}\n};"
       },
       "id": "4d343c30-b85a-473a-a6cb-760d73b460de",
       "name": "Determinar Subworkflow de Agente",
-      "type": "n8n-nodes-base.function",
-      "typeVersion": 1,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
         80,
         -80
@@ -158,22 +151,18 @@
         "useCustomSchema": true,
         "operation": "update",
         "tableId": "tasks",
-        "columnsToUpdate": [
-          "status",
-          "completed_at"
+        "filterType": "manual",
+        "matchConditions": [
+          {
+            "column": "task_id",
+            "operator": "eq",
+            "value": "={{ $('Determinar Subworkflow de Agente').item.json.task_id }}"
+          }
         ],
-        "matchConditions": {
-          "combinator": "and",
-          "conditions": [
-            {
-              "field": "task_id",
-              "operator": "eq",
-              "value": "={{ $('Determinar Subworkflow de Agente').item.json.task_id }}"
-            }
-          ]
-        },
-        "dataToSend": "defineBelow",
-        "customData": "={\n  \"status\": \"completed_success\",\n  \"completed_at\": \"={{ new Date().toISOString() }}\"\n}"
+        "updateData": {
+          "status": "completed_success",
+          "completed_at": "={{ new Date().toISOString() }}"
+        }
       },
       "id": "56aa6d00-a3a0-40dc-9eac-e972384d6aed",
       "name": "Actualizar Tarea a Éxito",
@@ -207,10 +196,12 @@
     },
     {
       "parameters": {
-        "operation": "rpc",
-        "tableId": "rpc/log_event",
-        "dataToSend": "defineBelow",
-        "customData": "={\n  \"log_level\": \"INFO\",\n  \"log_message\": \"Task orchestration completed successfully.\",\n  \"task_id\": \"={{ $('Determinar Subworkflow de Agente').item.json.task_id }}\",\n  \"agent_id\": \"A01\",\n  \"details\": {\n    \"assigned_agent\": \"={{ $('Determinar Subworkflow de Agente').item.json.assigned_agent_id }}\",\n    \"executed_subworkflow\": \"={{ $('Determinar Subworkflow de Agente').item.json.subworkflow_name }}\"\n  }\n}"
+        "operation": "customApiCall",
+        "httpMethod": "POST",
+        "path": "/rpc/log_event",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  log_level: 'INFO',\n  log_message: 'Task orchestration completed successfully.',\n  task_id: $('Determinar Subworkflow de Agente').item.json.task_id,\n  agent_id: 'A01',\n  details: {\n    assigned_agent: $('Determinar Subworkflow de Agente').item.json.assigned_agent_id,\n    executed_subworkflow: $('Determinar Subworkflow de Agente').item.json.subworkflow_name\n  }\n}) }}"
       },
       "id": "65e673e6-cb4d-460a-ae8f-4369c9a45bdf",
       "name": "Log de Éxito vía public.log_event",
