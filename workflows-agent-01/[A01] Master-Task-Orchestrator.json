@@ -197,4 +197,230 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({\n  success: true,\n  task_id: $('Determinar Subworkflow de Agente').item.json.task_id,\n  assigned_agent_id: $('Determinar Subworkflow de Agente').item.json.assigned_agent_id,\n  status: 'completed_success',\n  message: 'Task orchestrated and executed successfully',\n  timestamp: new Date().toISOString()\n}) }}",\n        \"options\": {\n          \"responseCode\": 200,\n          \"responseHeaders\": {\n            \"additionalHeaders\": true,\n            \"headers\": [\n              {\n                \"name\": \"Content-Type\",\n                \"value\": \"application/json\"\n              }\n            ]\n          }\n        }\n      },\n      \"id\": \"respuesta-exito\",\n      \"name\": \"Respuesta de Éxito\",\n      \"type\": \"n8n-nodes-base.respondToWebhook\",\n      \"typeVersion\": 1,\n      \"position\": [\n        1500,\n        0\n      ]\n    },\n    {\n      \"parameters\": {\n        \"workflowId\": \"[CORE] Handle-Error-and-Retry\",\n        \"data\": \"={{ JSON.stringify({\n  task_id: $('Llamar route_task_request').item.json[0]?.task_id || null,\n  error_message: $('Llamar route_task_request').item.json[0]?.error_message || 'Unknown routing error',\n  workflow_to_retry_id: $workflow.id,\n  workflow_params: $('Validar y Estructurar Parámetros').item.json.data,\n  agent_id: 'A01',\n  retry_context: 'task_routing_failure'\n}) }}\"\n      },\n      \"id\": \"handle-routing-error\",\n      \"name\": \"Manejar Error de Routing\",\n      \"type\": \"n8n-nodes-base.executeWorkflow\",\n      \"typeVersion\": 1,\n      \"position\": [\n        300,\n        200\n      ]\n    },\n    {\n      \"parameters\": {\n        \"workflowId\": \"[CORE] Handle-Error-and-Retry\",\n        \"data\": \"={{ JSON.stringify({\n  task_id: $('Determinar Subworkflow de Agente').item.json.task_id,\n  error_message: 'Subworkflow execution failed',\n  workflow_to_retry_id: $workflow.id,\n  workflow_params: $('Validar y Estructurar Parámetros').item.json.data,\n  agent_id: $('Determinar Subworkflow de Agente').item.json.assigned_agent_id,\n  retry_context: 'subworkflow_execution_failure'\n}) }}\"\n      },\n      \"id\": \"handle-subworkflow-error\",\n      \"name\": \"Manejar Error de Subworkflow\",\n      \"type\": \"n8n-nodes-base.executeWorkflow\",\n      \"typeVersion\": 1,\n      \"position\": [\n        600,\n        200\n      ]\n    },\n    {\n      \"parameters\": {\n        \"respondWith\": \"json\",\n        \"responseBody\": \"={{ JSON.stringify({\n  success: false,\n  error: $('Validar y Estructurar Parámetros').item.json.error,\n  details: $('Validar y Estructurar Parámetros').item.json.missing_fields || null,\n  timestamp: new Date().toISOString()\n}) }}\",\n        \"options\": {\n          \"responseCode\": 400,\n          \"responseHeaders\": {\n            \"additionalHeaders\": true,\n            \"headers\": [\n              {\n                \"name\": \"Content-Type\",\n                \"value\": \"application/json\"\n              }\n            ]\n          }\n        }\n      },\n      \"id\": \"respuesta-error-validacion\",\n      \"name\": \"Respuesta Error de Validación\",\n      \"type\": \"n8n-nodes-base.respondToWebhook\",\n      \"typeVersion\": 1,\n      \"position\": [\n        -600,\n        400\n      ]\n    }\n  ],\n  \"pinData\": {},\n  \"connections\": {\n    \"Webhook - Ingesta de Tarea\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Validar y Estructurar Parámetros\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Validar y Estructurar Parámetros\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"¿Son Válidos los Parámetros?\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"¿Son Válidos los Parámetros?\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Llamar route_task_request\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ],\n        [\n          {\n            \"node\": \"Respuesta Error de Validación\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Llamar route_task_request\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"¿Asignación Exitosa?\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"¿Asignación Exitosa?\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Determinar Subworkflow de Agente\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ],\n        [\n          {\n            \"node\": \"Manejar Error de Routing\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Determinar Subworkflow de Agente\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Ejecutar Subworkflow de Agente\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Ejecutar Subworkflow de Agente\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Actualizar Tarea a Éxito\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ],\n      \"error\": [\n        [\n          {\n            \"node\": \"Manejar Error de Subworkflow\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Actualizar Tarea a Éxito\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Log de Éxito\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Log de Éxito\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Respuesta de Éxito\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    }\n  },\n  \"active\": true,\n  \"settings\": {\n    \"executionOrder\": \"v1\"\n  },\n  \"versionId\": \"a01-master-orchestrator-v1\",\n  \"meta\": {\n    \"templateCredsSetupCompleted\": true\n  },\n  \"id\": \"a01-master-task-orchestrator\",\n  \"tags\": [\n    {\n      \"id\": \"agent-01\",\n      \"name\": \"Agent 01\"\n    },\n    {\n      \"id\": \"orchestration\",\n      \"name\": \"Orchestration\"\n    },\n    {\n      \"id\": \"core\",\n      \"name\": \"Core\"\n    }\n  ]\n}"
+        "responseBody": "={{ JSON.stringify({\n  success: true,\n  task_id: $('Determinar Subworkflow de Agente').item.json.task_id,\n  assigned_agent_id: $('Determinar Subworkflow de Agente').item.json.assigned_agent_id,\n  status: 'completed_success',\n  message: 'Task orchestrated and executed successfully',\n  timestamp: new Date().toISOString()\n}) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "additionalHeaders": true,
+            "headers": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respuesta-exito",
+      "name": "Respuesta de Éxito",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1500,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "[CORE] Handle-Error-and-Retry",
+        "data": "={{ JSON.stringify({\n  task_id: $('Llamar route_task_request').item.json[0]?.task_id || null,\n  error_message: $('Llamar route_task_request').item.json[0]?.error_message || 'Unknown routing error',\n  workflow_to_retry_id: $workflow.id,\n  workflow_params: $('Validar y Estructurar Parámetros').item.json.data,\n  agent_id: 'A01',\n  retry_context: 'task_routing_failure'\n}) }}"
+      },
+      "id": "handle-routing-error",
+      "name": "Manejar Error de Routing",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        300,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "[CORE] Handle-Error-and-Retry",
+        "data": "={{ JSON.stringify({\n  task_id: $('Determinar Subworkflow de Agente').item.json.task_id,\n  error_message: 'Subworkflow execution failed',\n  workflow_to_retry_id: $workflow.id,\n  workflow_params: $('Validar y Estructurar Parámetros').item.json.data,\n  agent_id: $('Determinar Subworkflow de Agente').item.json.assigned_agent_id,\n  retry_context: 'subworkflow_execution_failure'\n}) }}"
+      },
+      "id": "handle-subworkflow-error",
+      "name": "Manejar Error de Subworkflow",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        600,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  success: false,\n  error: $('Validar y Estructurar Parámetros').item.json.error,\n  details: $('Validar y Estructurar Parámetros').item.json.missing_fields || null,\n  timestamp: new Date().toISOString()\n}) }}",
+        "options": {
+          "responseCode": 400,
+          "responseHeaders": {
+            "additionalHeaders": true,
+            "headers": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respuesta-error-validacion",
+      "name": "Respuesta Error de Validación",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        400
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - Ingesta de Tarea": {
+      "main": [
+        [
+          {
+            "node": "Validar y Estructurar Parámetros",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar y Estructurar Parámetros": {
+      "main": [
+        [
+          {
+            "node": "¿Son Válidos los Parámetros?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Son Válidos los Parámetros?": {
+      "main": [
+        [
+          {
+            "node": "Llamar route_task_request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respuesta Error de Validación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Llamar route_task_request": {
+      "main": [
+        [
+          {
+            "node": "¿Asignación Exitosa?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Asignación Exitosa?": {
+      "main": [
+        [
+          {
+            "node": "Determinar Subworkflow de Agente",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Manejar Error de Routing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Determinar Subworkflow de Agente": {
+      "main": [
+        [
+          {
+            "node": "Ejecutar Subworkflow de Agente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ejecutar Subworkflow de Agente": {
+      "main": [
+        [
+          {
+            "node": "Actualizar Tarea a Éxito",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Manejar Error de Subworkflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Actualizar Tarea a Éxito": {
+      "main": [
+        [
+          {
+            "node": "Log de Éxito",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log de Éxito": {
+      "main": [
+        [
+          {
+            "node": "Respuesta de Éxito",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "a01-master-orchestrator-v1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "a01-master-task-orchestrator",
+  "tags": [
+    {
+      "id": "agent-01",
+      "name": "Agent 01"
+    },
+    {
+      "id": "orchestration",
+      "name": "Orchestration"
+    },
+    {
+      "id": "core",
+      "name": "Core"
+    }
+  ]
+}
