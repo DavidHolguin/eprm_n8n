@@ -1,0 +1,164 @@
+{
+  "name": "[MCP-SUB] A02-SendUsageReport",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "11g97f8a-7b1b-4b2b-9c3d-1234567890ab",
+      "name": "Start",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [340, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ '[MCP-SUB] A13-SendCommunication' }}",
+        "waitForSubWorkflow": true,
+        "inputData": "={\"organization_id\": \"{{ $json.organization_id }}\", \"sender_user_id\": \"{{ $json.sender_user_id }}\", \"communication_type\": \"report\", \"subject\": \"{{ $json.subject || 'Informe de Uso de la Plataforma EPRM' }}\", \"content\": \"{{ $json.report_content }}\", \"confidentiality_level\": \"restricted\", \"recipient_user_ids\": \"{{ $json.recipient_user_ids }}\", \"external_emails\": \"{{ $json.recipient_emails }}\"}"
+      },
+      "id": "22g97f8a-7b1b-4b2b-9c3d-1234567890cd",
+      "name": "Execute SendCommunication",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [560, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log the report sending event\nconst communicationId = $node[\"Execute SendCommunication\"].json.communication_id;\nconst organizationId = $json.organization_id;\nconst taskId = $json.task_id;\n\nconst logEventData = {\n  log_level: 'INFO',\n  log_message: `Informe de uso enviado para ${organizationId} (Comunicación ID: ${communicationId})`,\n  task_id: taskId,\n  agent_id: 'A02',\n  details: { \n    communication_id: communicationId,\n    organization_id: organizationId,\n    recipients_count: ($json.recipient_user_ids?.length || 0) + ($json.recipient_emails?.length || 0)\n  }\n};\n\nreturn {\n  json: {\n    communication_id: communicationId,\n    organization_id: organizationId,\n    log_event_data: logEventData\n  }\n};"
+      },
+      "id": "33g97f8a-7b1b-4b2b-9c3d-1234567890ef",
+      "name": "Log Event (Report Sent)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [780, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "select": "supabaseCredential",
+        "operation": "callFunction",
+        "functionName": "log_event",
+        "functionArgs": "={{ $json.log_event_data }}"
+      },
+      "id": "44g97f8a-7b1b-4b2b-9c3d-1234567890gh",
+      "name": "Call Log Event Function",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1000, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ '[CORE] Handle-Error-and-Retry' }}",
+        "waitForSubWorkflow": true,
+        "inputData": "={\"taskId\": \"{{ $json.task_id }}\", \"error_message\": \"{{ $error.message }}\", \"workflow_to_retry_id\": \"{{ $workflow.id }}\", \"workflow_params\": \"{{ $json }}\", \"agent_id\": \"A02\"}"
+      },
+      "id": "55g97f8a-7b1b-4b2b-9c3d-1234567890ij",
+      "name": "Handle Error and Retry",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [780, 500]
+    },
+    {
+      "parameters": {},
+      "id": "66g97f8a-7b1b-4b2b-9c3d-1234567890kl",
+      "name": "End Success",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1220, 300]
+    },
+    {
+      "parameters": {},
+      "id": "77g97f8a-7b1b-4b2b-9c3d-1234567890mn",
+      "name": "End Error",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1000, 500]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Execute SendCommunication",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute SendCommunication": {
+      "main": [
+        [
+          {
+            "node": "Log Event (Report Sent)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Event (Report Sent)": {
+      "main": [
+        [
+          {
+            "node": "Call Log Event Function",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Log Event Function": {
+      "main": [
+        [
+          {
+            "node": "End Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Error and Retry": {
+      "main": [
+        [
+          {
+            "node": "End Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "mcp-sub-a02-sendusagereport",
+  "tags": [
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "eprm-agents",
+      "name": "EPRM Agents"
+    },
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "agent-02",
+      "name": "Agent 02"
+    },
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "mcp-sub",
+      "name": "MCP Sub"
+    }
+  ]
+}

@@ -1,0 +1,191 @@
+{
+  "name": "[MCP-SUB] A03-RequestRoleAcceptanceNotification",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "ef8b4d82-1234-4567-8901-400000000001",
+      "name": "Execute Sub-workflow Trigger",
+      "type": "@n8n/n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [20, 320]
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": "users",
+        "options": {
+          "queryName": "id",
+          "queryValue": "={{$json.user_id}}",
+          "additionalFields": {
+            "columns": "id,email,full_name,organization_id",
+            "whereCondition": "organization_id = '{{$json.organization_id}}'"
+          }
+        }
+      },
+      "id": "ef8b4d82-1234-4567-8901-400000000002",
+      "name": "Supabase: Fetch User Details",
+      "type": "@n8n/n8n-nodes-supabase.supabase",
+      "typeVersion": 1,
+      "position": [240, 320],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-credentials",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare notification content with acceptance link\nconst userData = $node[\"Supabase: Fetch User Details\"].json.data;\nconst userId = $input.all()[0].json.user_id;\nconst assignedRoleName = $input.all()[0].json.assigned_role_name;\nconst taskId = $input.all()[0].json.task_id;\n\nif (!userData || userData.length === 0) {\n  throw new Error('User not found.');\n}\n\nconst user = userData[0];\n\n// In a production environment, 'GENERATED_TOKEN_HERE' would be a secure, one-time token\n// linked to the task and user, validated by a backend endpoint.\nconst acceptanceLink = `https://your-eprm-platform.com/accept-role?user_id=${user.id}&role=${assignedRoleName}&task_id=${taskId}&token=GENERATED_TOKEN_HERE`;\n\nconst content = `Estimado/a ${user.full_name},\\n\\nSe te ha asignado el rol de '${assignedRoleName}' en la plataforma EPRM SUITE. Es obligatorio confirmar la aceptación de este rol y sus responsabilidades. Por favor, haz clic en el siguiente enlace para aceptar:\\n\\n${acceptanceLink}\\n\\nEste acto se registrará como un acuse digital obligatorio.\\n\\nSaludos,\\nEquipo EPRM`;\n\nreturn [{\n  json: {\n    email: user.email,\n    full_name: user.full_name,\n    notification_content: content,\n    user_id: userId,\n    assigned_role_name: assignedRoleName,\n    task_id: taskId\n  }\n}];"
+      },
+      "id": "ef8b4d82-1234-4567-8901-400000000003",
+      "name": "Code: Prepare Notification Content",
+      "type": "@n8n/n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 320]
+    },
+    {
+      "parameters": {
+        "workflowId": "[MCP-SUB] A13-SendCommunication",
+        "options": {
+          "inputData": {
+            "organization_id": "={{$input.all()[0].json.organization_id}}",
+            "sender_user_id": "={{$input.all()[0].json.assigner_user_id}}",
+            "communication_type": "instruction",
+            "subject": "Acción Requerida: Aceptación de Rol en EPRM SUITE",
+            "content": "={{$json.notification_content}}",
+            "confidentiality_level": "restricted",
+            "recipient_user_ids": ["{{$json.user_id}}"]
+          }
+        }
+      },
+      "id": "ef8b4d82-1234-4567-8901-400000000004",
+      "name": "Execute Workflow: [MCP-SUB] A13-SendCommunication (Request Acceptance)",
+      "type": "@n8n/n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [680, 320]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log acceptance request event\nconst userId = $input.all()[0].json.user_id;\nconst assignedRoleName = $input.all()[0].json.assigned_role_name;\nconst taskId = $input.all()[0].json.task_id;\nconst communicationId = $node[\"Execute Workflow: [MCP-SUB] A13-SendCommunication (Request Acceptance)\"].json.communication_id || 'N/A';\n\n// Prepare log event parameters\nconst logParams = {\n  log_level: 'INFO',\n  log_message: `Solicitud de aceptación de rol '${assignedRoleName}' enviada a usuario (ID: ${userId}). Comunicación ID: ${communicationId}`,\n  task_id: taskId,\n  agent_id: 'A03',\n  details: { \n    user_id: userId,\n    assigned_role: assignedRoleName,\n    communication_id: communicationId\n  }\n};\n\nreturn [{\n  json: {\n    success: true,\n    communication_id: communicationId,\n    log_params: logParams\n  }\n}];"
+      },
+      "id": "ef8b4d82-1234-4567-8901-400000000005",
+      "name": "Code: Log Event (Acceptance Requested)",
+      "type": "@n8n/n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 320]
+    },
+    {
+      "parameters": {
+        "operation": "callFunction",
+        "function": "public.log_event",
+        "arguments": "={{$json.log_params}}"
+      },
+      "id": "ef8b4d82-1234-4567-8901-400000000006",
+      "name": "Supabase: Call Log Event",
+      "type": "@n8n/n8n-nodes-supabase.supabase",
+      "typeVersion": 1,
+      "position": [1120, 320],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-credentials",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Return final output\nreturn [{\n  json: {\n    success: $input.all()[0].json.success,\n    communication_id: $input.all()[0].json.communication_id\n  }\n}];"
+      },
+      "id": "ef8b4d82-1234-4567-8901-400000000007",
+      "name": "Code: Prepare Final Output",
+      "type": "@n8n/n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 320]
+    }
+  ],
+  "connections": {
+    "Execute Sub-workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Supabase: Fetch User Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase: Fetch User Details": {
+      "main": [
+        [
+          {
+            "node": "Code: Prepare Notification Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code: Prepare Notification Content": {
+      "main": [
+        [
+          {
+            "node": "Execute Workflow: [MCP-SUB] A13-SendCommunication (Request Acceptance)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Workflow: [MCP-SUB] A13-SendCommunication (Request Acceptance)": {
+      "main": [
+        [
+          {
+            "node": "Code: Log Event (Acceptance Requested)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code: Log Event (Acceptance Requested)": {
+      "main": [
+        [
+          {
+            "node": "Supabase: Call Log Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase: Call Log Event": {
+      "main": [
+        [
+          {
+            "node": "Code: Prepare Final Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "id": "agent-03-sub",
+      "name": "Agent-03-Subworkflows"
+    }
+  ],
+  "triggerCount": 0,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}

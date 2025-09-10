@@ -1,0 +1,362 @@
+{
+  "name": "[MCP-SUB] A02-EscalateComplaint",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "11j97f8a-7b1b-4b2b-9c3d-1234567890ab",
+      "name": "Start",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [340, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "select": "supabaseCredential",
+        "operation": "select",
+        "tableId": "support_tickets",
+        "filterType": "manual",
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "id",
+              "rightValue": "={{ $json.ticket_id }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "leftValue": "is_complaint",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean"
+              }
+            },
+            {
+              "leftValue": "status",
+              "rightValue": "unresolved",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        }
+      },
+      "id": "22j97f8a-7b1b-4b2b-9c3d-1234567890cd",
+      "name": "Fetch Complaint Details",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [560, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.data && $json.data.length > 0 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean"
+              }
+            }
+          ]
+        },
+        "combineOperation": "any"
+      },
+      "id": "33j97f8a-7b1b-4b2b-9c3d-1234567890ef",
+      "name": "Complaint Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [780, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ '[MCP-SUB] A19-CreateFindingForImprovement' }}",
+        "waitForSubWorkflow": true,
+        "inputData": "={\"organization_id\": \"{{ $json.data[0].organization_id }}\", \"source_type\": \"complaint\", \"source_id\": \"{{ $json.ticket_id }}\", \"description\": \"Queja no resuelta: {{ $json.data[0].subject }} - {{ $json.data[0].description }}\", \"suggested_corrective_action\": \"Analizar proceso de soporte y capacitación de agentes.\", \"creator_user_id\": \"{{ $json.escalator_user_id }}\"}"
+      },
+      "id": "44j97f8a-7b1b-4b2b-9c3d-1234567890gh",
+      "name": "Execute CreateFindingForImprovement",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1000, 200]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "select": "supabaseCredential",
+        "operation": "update",
+        "tableId": "support_tickets",
+        "filterType": "manual",
+        "matchingColumns": [
+          {
+            "column": "id",
+            "value": "={{ $json.ticket_id }}"
+          }
+        ],
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "escalated"
+            },
+            {
+              "fieldId": "updated_at",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            }
+          ]
+        }
+      },
+      "id": "55j97f8a-7b1b-4b2b-9c3d-1234567890ij",
+      "name": "Update Ticket Status (Escalated)",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1220, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log the complaint escalation event\nconst ticketId = $json.ticket_id;\nconst findingId = $node[\"Execute CreateFindingForImprovement\"].json.finding_id;\nconst taskId = $json.task_id;\n\nconst logEventData = {\n  log_level: 'INFO',\n  log_message: `Queja (Ticket ID: ${ticketId}) escalada a mejora continua (Finding ID: ${findingId})`,\n  task_id: taskId,\n  agent_id: 'A02',\n  details: { \n    ticket_id: ticketId,\n    finding_id: findingId,\n    escalator_user_id: $json.escalator_user_id\n  }\n};\n\nreturn {\n  json: {\n    finding_id: findingId,\n    ticket_id: ticketId,\n    log_event_data: logEventData\n  }\n};"
+      },
+      "id": "66j97f8a-7b1b-4b2b-9c3d-1234567890kl",
+      "name": "Log Event (Complaint Escalated)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1440, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log warning for complaint not found\nconst ticketId = $json.ticket_id;\nconst taskId = $json.task_id;\n\nconst logEventData = {\n  log_level: 'WARN',\n  log_message: `Intento de escalar ticket (ID: ${ticketId}), pero no es una queja sin resolver o no existe.`,\n  task_id: taskId,\n  agent_id: 'A02',\n  details: { \n    ticket_id: ticketId,\n    escalator_user_id: $json.escalator_user_id\n  }\n};\n\nreturn {\n  json: {\n    success: false,\n    message: \"Ticket no es una queja sin resolver o no existe.\",\n    log_event_data: logEventData\n  }\n};"
+      },
+      "id": "77j97f8a-7b1b-4b2b-9c3d-1234567890mn",
+      "name": "Log Event (Complaint Not Found)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 400]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "select": "supabaseCredential",
+        "operation": "callFunction",
+        "functionName": "log_event",
+        "functionArgs": "={{ $json.log_event_data }}"
+      },
+      "id": "88j97f8a-7b1b-4b2b-9c3d-1234567890op",
+      "name": "Call Log Event Function (Success)",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1660, 200]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "select": "supabaseCredential",
+        "operation": "callFunction",
+        "functionName": "log_event",
+        "functionArgs": "={{ $json.log_event_data }}"
+      },
+      "id": "99j97f8a-7b1b-4b2b-9c3d-1234567890qr",
+      "name": "Call Log Event Function (Warning)",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1220, 400]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ '[CORE] Handle-Error-and-Retry' }}",
+        "waitForSubWorkflow": true,
+        "inputData": "={\"taskId\": \"{{ $json.task_id }}\", \"error_message\": \"{{ $error.message }}\", \"workflow_to_retry_id\": \"{{ $workflow.id }}\", \"workflow_params\": \"{{ $json }}\", \"agent_id\": \"A02\"}"
+      },
+      "id": "10k97f8a-7b1b-4b2b-9c3d-1234567890st",
+      "name": "Handle Error and Retry",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1440, 500]
+    },
+    {
+      "parameters": {},
+      "id": "20k97f8a-7b1b-4b2b-9c3d-1234567890uv",
+      "name": "End Success",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1880, 200]
+    },
+    {
+      "parameters": {},
+      "id": "30k97f8a-7b1b-4b2b-9c3d-1234567890wx",
+      "name": "End Warning",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1440, 400]
+    },
+    {
+      "parameters": {},
+      "id": "40k97f8a-7b1b-4b2b-9c3d-1234567890yz",
+      "name": "End Error",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1660, 500]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Fetch Complaint Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Complaint Details": {
+      "main": [
+        [
+          {
+            "node": "Complaint Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Complaint Found?": {
+      "main": [
+        [
+          {
+            "node": "Execute CreateFindingForImprovement",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Event (Complaint Not Found)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute CreateFindingForImprovement": {
+      "main": [
+        [
+          {
+            "node": "Update Ticket Status (Escalated)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Ticket Status (Escalated)": {
+      "main": [
+        [
+          {
+            "node": "Log Event (Complaint Escalated)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Event (Complaint Escalated)": {
+      "main": [
+        [
+          {
+            "node": "Call Log Event Function (Success)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Event (Complaint Not Found)": {
+      "main": [
+        [
+          {
+            "node": "Call Log Event Function (Warning)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Log Event Function (Success)": {
+      "main": [
+        [
+          {
+            "node": "End Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Log Event Function (Warning)": {
+      "main": [
+        [
+          {
+            "node": "End Warning",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Error and Retry": {
+      "main": [
+        [
+          {
+            "node": "End Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "mcp-sub-a02-escalatecomplaint",
+  "tags": [
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "eprm-agents",
+      "name": "EPRM Agents"
+    },
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "agent-02",
+      "name": "Agent 02"
+    },
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "mcp-sub",
+      "name": "MCP Sub"
+    }
+  ]
+}

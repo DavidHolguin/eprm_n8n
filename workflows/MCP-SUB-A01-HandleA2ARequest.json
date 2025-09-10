@@ -1,0 +1,375 @@
+{
+  "name": "[MCP-SUB] A01-HandleA2ARequest",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "a2a-server",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a2a1b2c3-d4e5-6789-abcd-a2a123456789",
+      "name": "A2A Webhook Server",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ],
+      "webhookId": "a2a-server-webhook"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Parse and validate JSON-RPC 2.0 A2A request\nconst body = $json.body || {};\nconst headers = $json.headers || {};\n\n// Validate JSON-RPC 2.0 structure\nif (!body.jsonrpc || body.jsonrpc !== '2.0') {\n  throw new Error('Invalid JSON-RPC version. Expected 2.0');\n}\n\nif (!body.method) {\n  throw new Error('Missing method in JSON-RPC request');\n}\n\nif (!body.id) {\n  throw new Error('Missing id in JSON-RPC request');\n}\n\n// Extract A2A-specific parameters\nconst method = body.method;\nconst params = body.params || {};\nconst request_id = body.id;\n\n// Validate A2A authentication\nconst auth_header = headers['x-agent-auth'] || headers['X-Agent-Auth'];\nconst agent_id = headers['x-agent-id'] || headers['X-Agent-Id'];\nlet authenticated = false;\nlet auth_error = null;\n\nif (auth_header && agent_id) {\n  try {\n    // Basic A2A authentication validation\n    // In production, verify the agent signature/token\n    if (auth_header.length > 10 && agent_id.startsWith('A')) {\n      authenticated = true;\n    } else {\n      auth_error = 'Invalid agent authentication credentials';\n    }\n  } catch (e) {\n    auth_error = `A2A authentication error: ${e.message}`;\n  }\n} else {\n  auth_error = 'Missing X-Agent-Auth or X-Agent-Id headers';\n}\n\nreturn {\n  jsonrpc: body.jsonrpc,\n  method: method,\n  params: params,\n  request_id: request_id,\n  requesting_agent_id: agent_id,\n  authenticated: authenticated,\n  auth_error: auth_error,\n  timestamp: new Date().toISOString(),\n  client_ip: headers['x-forwarded-for'] || headers['x-real-ip'] || 'unknown'\n};"
+      },
+      "id": "a2a2c3d4-e5f6-7890-bcde-a2a234567890",
+      "name": "Parse A2A Request",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "a2a-auth-check",
+              "leftValue": "={{ $json.authenticated }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a2a3d4e5-f6g7-8901-cdef-a2a345678901",
+      "name": "Check A2A Authentication",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  jsonrpc: '2.0',\n  error: {\n    code: -32001,\n    message: 'A2A Authentication failed',\n    data: {\n      error: $json.auth_error,\n      timestamp: $json.timestamp,\n      required_headers: ['X-Agent-Auth', 'X-Agent-Id']\n    }\n  },\n  id: $json.request_id\n}) }}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "a2a4e5f6-g7h8-9012-defg-a2a456789012",
+      "name": "A2A Authentication Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        900,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Process authenticated A2A request and route accordingly\nconst a2aRequest = $json;\n\n// Handle different A2A methods\nswitch (a2aRequest.method) {\n  case 'getAgentCard':\n    // Return static agent card information\n    return {\n      a2a_method: 'getAgentCard',\n      request_id: a2aRequest.request_id,\n      requesting_agent_id: a2aRequest.requesting_agent_id,\n      timestamp: a2aRequest.timestamp,\n      agent_card: {\n        id: 'A01',\n        name: 'Integration-Orchestration Agent',\n        version: '1.0.0',\n        description: 'Central task orchestrator and protocol adapter for EPRM Suite',\n        capabilities: [\n          {\n            name: 'task_orchestration',\n            description: 'Orchestrate tasks across multiple agents in the EPRM Suite',\n            input_schema: {\n              type: 'object',\n              properties: {\n                task_type: { type: 'string', description: 'Type of task to execute' },\n                parameters: { type: 'object', description: 'Task-specific parameters' },\n                organization_id: { type: 'string', format: 'uuid' },\n                creator_user_id: { type: 'string', format: 'uuid' },\n                priority: { type: 'integer', minimum: 0, maximum: 10 },\n                project_id: { type: 'string', format: 'uuid', nullable: true }\n              },\n              required: ['task_type', 'organization_id', 'creator_user_id']\n            }\n          },\n          {\n            name: 'agent_routing',\n            description: 'Route tasks to appropriate specialized agents',\n            supported_agents: ['A02', 'A03', 'A04', 'A05', 'A06', 'A07', 'A08', 'A09', 'A10', 'A11', 'A12', 'A13', 'A14', 'A15', 'A16', 'A17', 'A18', 'A19', 'A20']\n          },\n          {\n            name: 'protocol_adaptation',\n            description: 'Adapt between MCP and A2A protocols',\n            supported_protocols: ['MCP', 'A2A']\n          },\n          {\n            name: 'error_handling',\n            description: 'Centralized error handling with retry logic',\n            retry_policy: {\n              max_retries: 3,\n              backoff_strategy: 'exponential',\n              base_delay_ms: 5000\n            }\n          }\n        ],\n        protocols: {\n          mcp: {\n            endpoint: '/webhook/mcp-server',\n            methods: ['tasks/execute', 'agent/info', 'capabilities/list']\n          },\n          a2a: {\n            endpoint: '/webhook/a2a-server',\n            methods: ['getAgentCard', 'executeTask']\n          }\n        },\n        status: 'active',\n        last_updated: new Date().toISOString()\n      }\n    };\n    \n  case 'executeTask':\n    // Extract task execution parameters for delegation\n    const task_type = a2aRequest.params.task_type;\n    const parameters = a2aRequest.params.parameters || {};\n    const organization_id = a2aRequest.params.organization_id;\n    const creator_user_id = a2aRequest.params.creator_user_id;\n    const priority = a2aRequest.params.priority || 0;\n    const project_id = a2aRequest.params.project_id || null;\n    \n    if (!task_type) {\n      throw new Error('Missing task_type in A2A executeTask request');\n    }\n    \n    if (!organization_id) {\n      throw new Error('Missing organization_id in A2A executeTask request');\n    }\n    \n    if (!creator_user_id) {\n      throw new Error('Missing creator_user_id in A2A executeTask request');\n    }\n    \n    return {\n      a2a_method: 'executeTask',\n      request_id: a2aRequest.request_id,\n      requesting_agent_id: a2aRequest.requesting_agent_id,\n      task_params: {\n        organization_id,\n        creator_user_id,\n        task_type,\n        parameters,\n        priority,\n        project_id\n      },\n      timestamp: a2aRequest.timestamp\n    };\n    \n  default:\n    throw new Error(`Unsupported A2A method: ${a2aRequest.method}`);\n}"
+      },
+      "id": "a2a5f6g7-h8i9-0123-efgh-a2a567890123",
+      "name": "Process A2A Method",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        900,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "a2a-method-check",
+              "leftValue": "={{ $json.a2a_method }}",
+              "rightValue": "executeTask",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a2a6g7h8-i9j0-1234-fghi-a2a678901234",
+      "name": "Route A2A Method",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "[A01] Master-Task-Orchestrator",
+        "parameters": "={{ $json.task_params }}"
+      },
+      "id": "a2a7h8i9-j0k1-2345-ghij-a2a789012345",
+      "name": "Execute Task via Master Orchestrator",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        1340,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  jsonrpc: '2.0',\n  result: {\n    success: true,\n    task_id: $json.task_id,\n    assigned_agent_id: $json.assigned_agent_id,\n    status: $json.status,\n    execution_time_ms: $json.execution_time_ms,\n    timestamp: $json.timestamp,\n    delegated_by: 'A01',\n    requesting_agent: $('Process A2A Method').item.json.requesting_agent_id\n  },\n  id: $('Process A2A Method').item.json.request_id\n}) }}"
+      },
+      "id": "a2a8i9j0-k1l2-3456-hijk-a2a890123456",
+      "name": "A2A Task Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1560,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  jsonrpc: '2.0',\n  result: $json.agent_card,\n  id: $json.request_id\n}) }}"
+      },
+      "id": "a2a9j0k1-l2m3-4567-ijkl-a2a901234567",
+      "name": "A2A Agent Card Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1340,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  jsonrpc: '2.0',\n  error: {\n    code: -32000,\n    message: 'A2A task execution failed',\n    data: {\n      error: $json.error,\n      errorType: $json.errorType,\n      task_id: $json.task_id,\n      timestamp: $json.timestamp,\n      requesting_agent: $('Process A2A Method').item.json.requesting_agent_id\n    }\n  },\n  id: $('Process A2A Method').item.json.request_id\n}) }}",
+        "options": {
+          "responseCode": 500
+        }
+      },
+      "id": "a2aak1l2-m3n4-5678-jklm-a2aa12345678",
+      "name": "A2A Task Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1560,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "[CORE] Log-Event",
+        "parameters": {
+          "log_level": "INFO",
+          "log_message": "A2A request processed successfully",
+          "agent_id": "A01",
+          "details": "={{ JSON.stringify({\n    a2a_method: $json.a2a_method,\n    request_id: $json.request_id,\n    requesting_agent_id: $json.requesting_agent_id,\n    client_ip: $('Parse A2A Request').item.json.client_ip,\n    processing_time_ms: Date.now() - Date.parse($json.timestamp)\n  }) }}"
+        }
+      },
+      "id": "a2abl2m3-n4o5-6789-klmn-a2ab23456789",
+      "name": "Log A2A Success",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        1780,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "[CORE] Log-Event",
+        "parameters": {
+          "log_level": "ERROR",
+          "log_message": "A2A request failed",
+          "agent_id": "A01",
+          "details": "={{ JSON.stringify({\n    error: $json.auth_error || $json.error || 'Unknown error',\n    request_id: $json.request_id,\n    requesting_agent_id: $json.requesting_agent_id,\n    client_ip: $('Parse A2A Request').item.json.client_ip,\n    a2a_method: $('Parse A2A Request').item.json.method\n  }) }}"
+        }
+      },
+      "id": "a2acm3n4-o5p6-7890-lmno-a2ac34567890",
+      "name": "Log A2A Error",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "A2A Webhook Server": {
+      "main": [
+        [
+          {
+            "node": "Parse A2A Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse A2A Request": {
+      "main": [
+        [
+          {
+            "node": "Check A2A Authentication",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check A2A Authentication": {
+      "main": [
+        [
+          {
+            "node": "Process A2A Method",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log A2A Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log A2A Error": {
+      "main": [
+        [
+          {
+            "node": "A2A Authentication Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process A2A Method": {
+      "main": [
+        [
+          {
+            "node": "Route A2A Method",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route A2A Method": {
+      "main": [
+        [
+          {
+            "node": "Execute Task via Master Orchestrator",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "A2A Agent Card Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Task via Master Orchestrator": {
+      "main": [
+        [
+          {
+            "node": "A2A Task Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "A2A Task Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "A2A Task Success Response": {
+      "main": [
+        [
+          {
+            "node": "Log A2A Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "A2A Agent Card Response": {
+      "main": [
+        [
+          {
+            "node": "Log A2A Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "id": "mcp-sub",
+      "name": "MCP Subworkflow"
+    },
+    {
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "id": "agent-01",
+      "name": "Agent 01"
+    },
+    {
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "id": "a2a-adapter",
+      "name": "A2A Adapter"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}

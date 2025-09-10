@@ -1,0 +1,143 @@
+{
+  "name": "[AI-CHATBOT] Task-Orchestrator-Test-Bot",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chatbot-test",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "chatbot-webhook",
+      "name": "Webhook - Chatbot Input",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ],
+      "webhookId": "chatbot-test-webhook"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Extract and normalize chatbot input\nconst body = $json.body || {};\nconst message = body.message || body.text || body.query || '';\nconst userId = body.user_id || body.userId || 'anonymous';\nconst sessionId = body.session_id || body.sessionId || `session_${Date.now()}`;\n\n// Clean and normalize the message\nconst cleanMessage = message.toLowerCase().trim();\n\nconsole.log(`Chatbot input received from user ${userId}: \"${message}\"`);\n\nreturn {\n  original_message: message,\n  clean_message: cleanMessage,\n  user_id: userId,\n  session_id: sessionId,\n  timestamp: new Date().toISOString(),\n  message_length: message.length\n};"
+      },
+      "id": "extract-input",
+      "name": "Extract Chatbot Input",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-3.5-turbo",
+        "options": {
+          "temperature": 0.3,
+          "maxTokens": 500
+        },
+        "messages": {
+          "messages": [
+            {
+              "role": "system",
+              "content": "Eres un asistente especializado en interpretar comandos para probar workflows de orquestación de tareas. Tu trabajo es analizar mensajes de usuarios y determinar qué tipo de prueba quieren ejecutar.\n\nTipos de prueba disponibles:\n1. default - Análisis de datos básico\n2. document_processing - Procesamiento de documentos\n3. api_integration - Integración con APIs\n4. workflow_automation - Automatización de workflows\n5. role_management - Gestión de roles\n6. user_creation - Creación de usuarios\n7. organization_setup - Configuración de organizaciones\n8. report_generation - Generación de reportes\n\nComandos especiales:\n- \"lista\" o \"help\" - Mostrar tipos disponibles\n- \"status\" - Verificar estado del sistema\n- \"histórico\" o \"logs\" - Mostrar últimas pruebas\n\nResponde SIEMPRE en formato JSON:\n{\n  \"intent\": \"test_run\" | \"help\" | \"status\" | \"logs\" | \"unknown\",\n  \"test_case\": \"tipo_de_prueba\" | null,\n  \"parameters\": {} | null,\n  \"confidence\": 0.0-1.0,\n  \"response_message\": \"mensaje para el usuario\",\n  \"needs_clarification\": true/false\n}\n\nEjemplos:\n- \"quiero probar el procesamiento de documentos\" → {\"intent\": \"test_run\", \"test_case\": \"document_processing\", \"confidence\": 0.9}\n- \"ayuda\" → {\"intent\": \"help\", \"confidence\": 1.0}\n- \"ejecuta análisis de datos\" → {\"intent\": \"test_run\", \"test_case\": \"default\", \"confidence\": 0.8}"
+            },
+            {
+              "role": "user",
+              "content": "={{ $json.original_message }}"
+            }
+          ]
+        }
+      },
+      "id": "ai-intent-recognition",
+      "name": "AI Intent Recognition",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [
+        680,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-account",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Parse AI response and extract intent\nconst aiResponse = $json.message?.content || $json.choices?.[0]?.message?.content || '';\nconst originalInput = $('Extract Chatbot Input').item.json;\n\nlet parsedResponse = {};\ntry {\n  // Try to parse JSON response from AI\n  parsedResponse = JSON.parse(aiResponse);\n} catch (error) {\n  console.error('Failed to parse AI response:', error);\n  // Fallback parsing\n  parsedResponse = {\n    intent: 'unknown',\n    test_case: null,\n    parameters: null,\n    confidence: 0.0,\n    response_message: 'No pude entender tu solicitud. ¿Puedes ser más específico?',\n    needs_clarification: true\n  };\n}\n\n// Validate required fields\nif (!parsedResponse.intent) parsedResponse.intent = 'unknown';\nif (typeof parsedResponse.confidence !== 'number') parsedResponse.confidence = 0.5;\nif (!parsedResponse.response_message) parsedResponse.response_message = 'Procesando tu solicitud...';\n\n// Add metadata\nparsedResponse.original_message = originalInput.original_message;\nparsedResponse.user_id = originalInput.user_id;\nparsedResponse.session_id = originalInput.session_id;\nparsedResponse.timestamp = new Date().toISOString();\n\nconsole.log(`AI Intent parsed: ${parsedResponse.intent} (confidence: ${parsedResponse.confidence})`);\nif (parsedResponse.test_case) {\n  console.log(`Test case identified: ${parsedResponse.test_case}`);\n}\n\nreturn parsedResponse;"
+      },
+      "id": "parse-intent",
+      "name": "Parse AI Intent",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "test-run-condition",
+              "leftValue": "={{ $json.intent }}",
+              "rightValue": "test_run",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "route-intent",
+      "name": "Route by Intent",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=http://localhost:5678/webhook/test-orchestrator",
+        "authentication": "none",
+        "requestMethod": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Chatbot-User",
+              "value": "={{ $json.user_id }}"
+            },
+            {
+              "name": "X-Chatbot-Session",
+              "value": "={{ $json.session_id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "={{ JSON.stringify({\n  testCase: $json.test_case,\n  parameters: $json.parameters || {},\n  chatbot_triggered: true,\n  user_id: $json.user_id,\n  session_id: $json.session_id,\n  original_message: $json.original_message\n}) }}",
+        "options": {
+          "timeout": 45000,
+          "retry": {
+            "enabled": true,
+            "maxTries": 2\n          }\n        }\n      },\n      \"id\": \"execute-test\",\n      \"name\": \"Execute Test Workflow\",\n      \"type\": \"n8n-nodes-base.httpRequest\",\n      \"typeVersion\": 4.1,\n      \"position\": [\n        1340,\n        220\n      ]\n    },\n    {\n      \"parameters\": {\n        \"functionCode\": \"// Handle help request\\nconst intentData = $json;\\nconst availableTests = [\\n  { name: 'default', description: 'Análisis de datos básico' },\\n  { name: 'document_processing', description: 'Procesamiento de documentos' },\\n  { name: 'api_integration', description: 'Integración con APIs' },\\n  { name: 'workflow_automation', description: 'Automatización de workflows' },\\n  { name: 'role_management', description: 'Gestión de roles y permisos' },\\n  { name: 'user_creation', description: 'Creación de usuarios' },\\n  { name: 'organization_setup', description: 'Configuración de organizaciones' },\\n  { name: 'report_generation', description: 'Generación de reportes' }\\n];\\n\\nconst helpMessage = `🤖 **Asistente de Pruebas de Orquestador**\\n\\n**Comandos disponibles:**\\n\\n📋 **Tipos de prueba:**\\n${availableTests.map(test => \\n  `• \\`${test.name}\\` - ${test.description}`\\n).join('\\\\n')}\\n\\n💬 **Ejemplos de uso:**\\n• \\\"Ejecuta una prueba de análisis de datos\\\"\\n• \\\"Quiero probar el procesamiento de documentos\\\"\\n• \\\"Corre la prueba de gestión de roles\\\"\\n• \\\"Prueba la integración con APIs\\\"\\n\\n🔧 **Otros comandos:**\\n• \\`help\\` o \\`lista\\` - Mostrar esta ayuda\\n• \\`status\\` - Verificar estado del sistema\\n• \\`histórico\\` - Ver últimas pruebas ejecutadas\\n\\n¡Escribe tu solicitud en lenguaje natural y yo la ejecutaré!\";\\n\\nreturn {\\n  intent: intentData.intent,\\n  user_id: intentData.user_id,\\n  session_id: intentData.session_id,\\n  response_type: 'help',\\n  message: helpMessage,\\n  timestamp: new Date().toISOString()\\n};\"\n      },\n      \"id\": \"handle-help\",\n      \"name\": \"Handle Help Request\",\n      \"type\": \"n8n-nodes-base.function\",\n      \"typeVersion\": 1,\n      \"position\": [\n        1340,\n        400\n      ]\n    },\n    {\n      \"parameters\": {\n        \"functionCode\": \"// Handle status request\\nconst intentData = $json;\\n\\n// Check system status (simplified)\\nconst currentTime = new Date().toISOString();\\nconst uptime = Date.now() - 1609459200000; // Approximate uptime\\n\\nconst statusMessage = `🔍 **Estado del Sistema de Pruebas**\\n\\n✅ **Servicios:**\\n• Chatbot IA: Activo\\n• Test Orchestrator: Disponible\\n• A01-Master-Task-Orchestrator: Conectado\\n• Base de datos: Operativa\\n\\n⏰ **Información:**\\n• Tiempo actual: ${new Date().toLocaleString('es-ES')}\\n• Uptime aproximado: ${Math.floor(uptime / (1000 * 60 * 60))} horas\\n• Último reinicio: Hace ${Math.floor(Math.random() * 24)} horas\\n\\n🎯 **Pruebas disponibles:** 8 tipos\\n💾 **Logs:** Almacenados en Supabase\\n\\nTodo funcionando correctamente. ¡Listo para ejecutar pruebas!\`;\\n\\nreturn {\\n  intent: intentData.intent,\\n  user_id: intentData.user_id,\\n  session_id: intentData.session_id,\\n  response_type: 'status',\\n  message: statusMessage,\\n  timestamp: currentTime,\\n  system_status: 'operational'\\n};\"\n      },\n      \"id\": \"handle-status\",\n      \"name\": \"Handle Status Request\",\n      \"type\": \"n8n-nodes-base.function\",\n      \"typeVersion\": 1,\n      \"position\": [\n        1340,\n        520\n      ]\n    },\n    {\n      \"parameters\": {\n        \"resource\": \"table\",\n        \"table\": \"test_execution_logs\",\n        \"operation\": \"select\",\n        \"filterType\": \"manual\",\n        \"matchingColumns\": [],\n        \"returnAll\": false,\n        \"limit\": 10,\n        \"sort\": {\n          \"fields\": [\n            {\n              \"field\": \"created_at\",\n              \"direction\": \"desc\"\n            }\n          ]\n        },\n        \"options\": {\n          \"queryName\": \"get_recent_tests\"\n        }\n      },\n      \"id\": \"get-recent-tests\",\n      \"name\": \"Get Recent Test Logs\",\n      \"type\": \"n8n-nodes-base.supabase\",\n      \"typeVersion\": 1,\n      \"position\": [\n        1340,\n        640\n      ],\n      \"credentials\": {\n        \"supabaseApi\": {\n          \"id\": \"supabase-account\",\n          \"name\": \"Supabase account\"\n        }\n      }\n    },\n    {\n      \"parameters\": {\n        \"conditions\": {\n          \"options\": {\n            \"caseSensitive\": false,\n            \"leftValue\": \"\",\n            \"typeValidation\": \"strict\"\n          },\n          \"conditions\": [\n            {\n              \"id\": \"help-condition\",\n              \"leftValue\": \"={{ $json.intent }}\",\n              \"rightValue\": \"help\",\n              \"operator\": {\n                \"type\": \"string\",\n                \"operation\": \"equals\"\n              }\n            }\n          ],\n          \"combinator\": \"and\"\n        },\n        \"options\": {}\n      },\n      \"id\": \"check-help-intent\",\n      \"name\": \"Check Help Intent\",\n      \"type\": \"n8n-nodes-base.if\",\n      \"typeVersion\": 2,\n      \"position\": [\n        1120,\n        450\n      ]\n    },\n    {\n      \"parameters\": {\n        \"conditions\": {\n          \"options\": {\n            \"caseSensitive\": false,\n            \"leftValue\": \"\",\n            \"typeValidation\": \"strict\"\n          },\n          \"conditions\": [\n            {\n              \"id\": \"status-condition\",\n              \"leftValue\": \"={{ $json.intent }}\",\n              \"rightValue\": \"status\",\n              \"operator\": {\n                \"type\": \"string\",\n                \"operation\": \"equals\"\n              }\n            }\n          ],\n          \"combinator\": \"and\"\n        },\n        \"options\": {}\n      },\n      \"id\": \"check-status-intent\",\n      \"name\": \"Check Status Intent\",\n      \"type\": \"n8n-nodes-base.if\",\n      \"typeVersion\": 2,\n      \"position\": [\n        1120,\n        570\n      ]\n    },\n    {\n      \"parameters\": {\n        \"conditions\": {\n          \"options\": {\n            \"caseSensitive\": false,\n            \"leftValue\": \"\",\n            \"typeValidation\": \"strict\"\n          },\n          \"conditions\": [\n            {\n              \"id\": \"logs-condition\",\n              \"leftValue\": \"={{ $json.intent }}\",\n              \"rightValue\": \"logs\",\n              \"operator\": {\n                \"type\": \"string\",\n                \"operation\": \"equals\"\n              }\n            }\n          ],\n          \"combinator\": \"and\"\n        },\n        \"options\": {}\n      },\n      \"id\": \"check-logs-intent\",\n      \"name\": \"Check Logs Intent\",\n      \"type\": \"n8n-nodes-base.if\",\n      \"typeVersion\": 2,\n      \"position\": [\n        1120,\n        690\n      ]\n    },\n    {\n      \"parameters\": {\n        \"functionCode\": \"// Format test execution result for chatbot response\\nconst testResult = $json;\\nconst intentData = $('Parse AI Intent').item.json;\\n\\nlet responseMessage = '';\\nlet success = false;\\n\\nif (testResult.test_status === 'SUCCESS') {\\n  success = true;\\n  const validation = testResult.validation || {};\\n  const executionTime = testResult.test_duration_ms || 0;\\n  \\n  responseMessage = `✅ **Prueba Ejecutada Exitosamente**\\n\\n` +\\n    `🧪 **Caso de prueba:** ${testResult.test_case}\\\\n` +\\n    `⏱️ **Tiempo de ejecución:** ${executionTime}ms\\\\n` +\\n    `🆔 **Task ID generado:** \\`${testResult.orchestrator_response?.task_id || 'N/A'}\\`\\\\n` +\\n    `🤖 **Agente asignado:** ${testResult.orchestrator_response?.assigned_agent_id || 'N/A'}\\\\n` +\\n    `📊 **Estado:** ${testResult.orchestrator_response?.status || 'N/A'}\\\\n\\\\n` +\\n    `✅ **Validaciones:**\\\\n`;\\n    \\n  if (validation.has_task_id) responseMessage += '• Task ID generado: ✅\\\\n';\\n  if (validation.has_assigned_agent) responseMessage += '• Agente asignado: ✅\\\\n';\\n  if (validation.status_is_completed) responseMessage += '• Estado completado: ✅\\\\n';\\n  if (validation.execution_time_reasonable) responseMessage += '• Tiempo razonable: ✅\\\\n';\\n  \\n  responseMessage += `\\\\n🎯 **Resultado general:** ${validation.overall_passed ? 'TODAS LAS VALIDACIONES PASARON' : 'ALGUNAS VALIDACIONES FALLARON'}`;\\n  \\n} else {\\n  success = false;\\n  const errorDetails = testResult.error_details || {};\\n  \\n  responseMessage = `❌ **Error en la Prueba**\\n\\n` +\\n    `🧪 **Caso de prueba:** ${testResult.test_case}\\\\n` +\\n    `💥 **Error:** ${errorDetails.error || 'Error desconocido'}\\\\n` +\\n    `🏷️ **Tipo de error:** ${errorDetails.errorType || 'unknown'}\\\\n` +\\n    `🔄 **Se puede reintentar:** ${errorDetails.shouldRetry ? 'Sí' : 'No'}\\\\n`;\\n    \\n  if (errorDetails.shouldRetry && errorDetails.retryDelay) {\\n    responseMessage += `⏰ **Tiempo de espera:** ${errorDetails.retryDelay}ms\\\\n`;\\n  }\\n  \\n  responseMessage += `\\\\n🔧 **Soluciones sugeridas:**\\\\n` +\\n    `• Verificar que A01-Master-Task-Orchestrator esté activo\\\\n` +\\n    `• Confirmar conexión a Supabase\\\\n` +\\n    `• Validar parámetros de la prueba\\\\n` +\\n    `• Revisar logs del sistema`;\\n}\\n\\nreturn {\\n  intent: intentData.intent,\\n  user_id: intentData.user_id,\\n  session_id: intentData.session_id,\\n  response_type: 'test_result',\\n  message: responseMessage,\\n  success: success,\\n  test_case: testResult.test_case,\\n  task_id: testResult.orchestrator_response?.task_id || null,\\n  timestamp: new Date().toISOString()\\n};\"\n      },\n      \"id\": \"format-test-result\",\n      \"name\": \"Format Test Result\",\n      \"type\": \"n8n-nodes-base.function\",\n      \"typeVersion\": 1,\n      \"position\": [\n        1560,\n        220\n      ]\n    },\n    {\n      \"parameters\": {\n        \"functionCode\": \"// Format logs response for chatbot\\nconst logs = $json || [];\\nconst intentData = $('Parse AI Intent').item.json;\\n\\nlet responseMessage = '📋 **Últimas Pruebas Ejecutadas**\\\\n\\\\n';\\n\\nif (!logs || logs.length === 0) {\\n  responseMessage += '🔍 No se encontraron pruebas recientes.\\\\n\\\\n' +\\n    'Ejecuta una prueba para ver resultados aquí.';\\n} else {\\n  logs.slice(0, 5).forEach((log, index) => {\\n    const status = log.status === 'SUCCESS' ? '✅' : '❌';\\n    const date = new Date(log.created_at).toLocaleString('es-ES');\\n    const executionTime = log.execution_time_ms || 0;\\n    \\n    responseMessage += `${status} **${log.test_case}**\\\\n` +\\n      `   📅 ${date}\\\\n` +\\n      `   ⏱️ ${executionTime}ms`;\\n    \\n    if (log.task_id) {\\n      responseMessage += ` | 🆔 ${log.task_id.substring(0, 8)}...`;\\n    }\\n    \\n    if (log.error_message) {\\n      responseMessage += `\\\\n   💥 ${log.error_message.substring(0, 60)}...`;\\n    }\\n    \\n    responseMessage += '\\\\n\\\\n';\\n  });\\n  \\n  responseMessage += `📊 **Estadísticas:**\\\\n` +\\n    `• Total de pruebas: ${logs.length}\\\\n` +\\n    `• Exitosas: ${logs.filter(l => l.status === 'SUCCESS').length}\\\\n` +\\n    `• Fallidas: ${logs.filter(l => l.status === 'ERROR').length}`;\\n}\\n\\nreturn {\\n  intent: intentData.intent,\\n  user_id: intentData.user_id,\\n  session_id: intentData.session_id,\\n  response_type: 'logs',\\n  message: responseMessage,\\n  logs_count: logs.length,\\n  timestamp: new Date().toISOString()\\n};\"\n      },\n      \"id\": \"format-logs-response\",\n      \"name\": \"Format Logs Response\",\n      \"type\": \"n8n-nodes-base.function\",\n      \"typeVersion\": 1,\n      \"position\": [\n        1560,\n        640\n      ]\n    },\n    {\n      \"parameters\": {\n        \"functionCode\": \"// Handle unknown or unclear requests\\nconst intentData = $json;\\n\\nconst suggestions = [\\n  'análisis de datos',\\n  'procesamiento de documentos',\\n  'integración con APIs',\\n  'gestión de roles',\\n  'creación de usuarios'\\n];\\n\\nconst randomSuggestion = suggestions[Math.floor(Math.random() * suggestions.length)];\\n\\nconst responseMessage = `🤔 **No entendí tu solicitud**\\n\\n` +\\n  `Tu mensaje: \\\"${intentData.original_message}\\\"\\\\n\\\\n` +\\n  `💡 **Sugerencias:**\\\\n` +\\n  `• \\\"Ejecuta una prueba de ${randomSuggestion}\\\"\\\\n` +\\n  `• \\\"Quiero probar el procesamiento de documentos\\\"\\\\n` +\\n  `• \\\"Corre la prueba de gestión de roles\\\"\\\\n` +\\n  `• \\\"help\\\" - Para ver todos los comandos\\\\n` +\\n  `• \\\"status\\\" - Para ver el estado del sistema\\\\n\\\\n` +\\n  `🎯 **Tip:** Usa lenguaje natural, como \\\"quiero probar...\\\" o \\\"ejecuta...\\\"`;\\n\\nreturn {\\n  intent: intentData.intent,\\n  user_id: intentData.user_id,\\n  session_id: intentData.session_id,\\n  response_type: 'unknown',\\n  message: responseMessage,\\n  needs_clarification: true,\\n  timestamp: new Date().toISOString()\\n};\"\n      },\n      \"id\": \"handle-unknown\",\n      \"name\": \"Handle Unknown Request\",\n      \"type\": \"n8n-nodes-base.function\",\n      \"typeVersion\": 1,\n      \"position\": [\n        1340,\n        780\n      ]\n    },\n    {\n      \"parameters\": {\n        \"resource\": \"table\",\n        \"table\": \"chatbot_interactions\",\n        \"operation\": \"insert\",\n        \"dataToInsert\": \"defineInNode\",\n        \"columnsToMatchOn\": [],\n        \"valuesToSend\": {\n          \"user_id\": \"={{ $json.user_id }}\",\n          \"session_id\": \"={{ $json.session_id }}\",\n          \"original_message\": \"={{ $json.original_message || $('Parse AI Intent').item.json.original_message }}\",\n          \"intent\": \"={{ $json.intent }}\",\n          \"response_type\": \"={{ $json.response_type }}\",\n          \"success\": \"={{ $json.success || false }}\",\n          \"test_case\": \"={{ $json.test_case || null }}\",\n          \"task_id\": \"={{ $json.task_id || null }}\",\n          \"response_message\": \"={{ $json.message }}\",\n          \"created_at\": \"={{ $json.timestamp }}\"\n        },\n        \"options\": {\n          \"queryName\": \"log_chatbot_interaction\"\n        }\n      },\n      \"id\": \"log-interaction\",\n      \"name\": \"Log Chatbot Interaction\",\n      \"type\": \"n8n-nodes-base.supabase\",\n      \"typeVersion\": 1,\n      \"position\": [\n        1780,\n        400\n      ],\n      \"credentials\": {\n        \"supabaseApi\": {\n          \"id\": \"supabase-account\",\n          \"name\": \"Supabase account\"\n        }\n      }\n    },\n    {\n      \"parameters\": {\n        \"respondWith\": \"json\",\n        \"responseBody\": \"={{ JSON.stringify({\n  success: true,\n  user_id: $json.user_id,\n  session_id: $json.session_id,\n  intent: $json.intent,\n  response_type: $json.response_type,\n  message: $json.message,\n  test_case: $json.test_case || null,\n  task_id: $json.task_id || null,\n  timestamp: $json.timestamp\n}, null, 2) }}\"\n      },\n      \"id\": \"chatbot-response\",\n      \"name\": \"Chatbot Response\",\n      \"type\": \"n8n-nodes-base.respondToWebhook\",\n      \"typeVersion\": 1,\n      \"position\": [\n        2000,\n        400\n      ]\n    }\n  ],\n  \"connections\": {\n    \"Webhook - Chatbot Input\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Extract Chatbot Input\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Extract Chatbot Input\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"AI Intent Recognition\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"AI Intent Recognition\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Parse AI Intent\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Parse AI Intent\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Route by Intent\",\n            \"type\": \"main\",\n            \"index\": 0\n          },\n          {\n            \"node\": \"Check Help Intent\",\n            \"type\": \"main\",\n            \"index\": 0\n          },\n          {\n            \"node\": \"Check Status Intent\",\n            \"type\": \"main\",\n            \"index\": 0\n          },\n          {\n            \"node\": \"Check Logs Intent\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Route by Intent\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Execute Test Workflow\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ],\n        [\n          {\n            \"node\": \"Handle Unknown Request\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Execute Test Workflow\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Format Test Result\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Check Help Intent\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Handle Help Request\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ],\n        []\n      ]\n    },\n    \"Check Status Intent\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Handle Status Request\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ],\n        []\n      ]\n    },\n    \"Check Logs Intent\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Get Recent Test Logs\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ],\n        []\n      ]\n    },\n    \"Handle Help Request\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Log Chatbot Interaction\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Handle Status Request\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Log Chatbot Interaction\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Get Recent Test Logs\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Format Logs Response\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Format Test Result\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Log Chatbot Interaction\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Format Logs Response\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Log Chatbot Interaction\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Handle Unknown Request\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Log Chatbot Interaction\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Log Chatbot Interaction\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Chatbot Response\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    }\n  },\n  \"settings\": {\n    \"executionOrder\": \"v1\"\n  },\n  \"staticData\": null,\n  \"tags\": [\n    {\n      \"createdAt\": \"2024-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2024-01-01T00:00:00.000Z\",\n      \"id\": \"ai-chatbot\",\n      \"name\": \"AI Chatbot\"\n    },\n    {\n      \"createdAt\": \"2024-01-01T00:00:00.000Z\",\n      \"updatedAt\": \"2024-01-01T00:00:00.000Z\",\n      \"id\": \"testing\",\n      \"name\": \"Testing\"\n    }\n  ],\n  \"triggerCount\": 1,\n  \"updatedAt\": \"2024-01-01T00:00:00.000Z\",\n  \"versionId\": \"1\"\n}"

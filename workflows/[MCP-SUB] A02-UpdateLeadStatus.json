@@ -1,0 +1,205 @@
+{
+  "name": "[MCP-SUB] A02-UpdateLeadStatus",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "11c97f8a-7b1b-4b2b-9c3d-1234567890ab",
+      "name": "Start",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        340,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "select": "supabaseCredential",
+        "operation": "update",
+        "tableId": "commercial_leads",
+        "filterType": "manual",
+        "matchingColumns": [
+          {
+            "column": "id",
+            "value": "={{ $json.lead_id }}"
+          }
+        ],
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "lead_status",
+              "fieldValue": "={{ $json.new_status }}"
+            },
+            {
+              "fieldId": "updated_at",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            }
+          ]
+        }
+      },
+      "id": "22c97f8a-7b1b-4b2b-9c3d-1234567890cd",
+      "name": "Update Lead Status",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        560,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log the lead status update event\nconst leadId = $json.lead_id;\nconst newStatus = $json.new_status;\nconst taskId = $json.task_id;\n\n// Call log_event function\nconst logEventData = {\n  log_level: 'INFO',\n  log_message: `Estado de lead (ID: ${leadId}) actualizado a: ${newStatus}`,\n  task_id: taskId,\n  agent_id: 'A02',\n  details: { \n    lead_id: leadId,\n    new_status: newStatus,\n    updater_user_id: $json.updater_user_id\n  }\n};\n\nreturn {\n  json: {\n    success: true,\n    lead_id: leadId,\n    new_status: newStatus,\n    log_event_data: logEventData\n  }\n};"
+      },
+      "id": "33c97f8a-7b1b-4b2b-9c3d-1234567890ef",
+      "name": "Log Event (Lead Status Updated)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "select": "supabaseCredential",
+        "operation": "callFunction",
+        "functionName": "log_event",
+        "functionArgs": "={{ $json.log_event_data }}"
+      },
+      "id": "44c97f8a-7b1b-4b2b-9c3d-1234567890gh",
+      "name": "Call Log Event Function",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ '[CORE] Handle-Error-and-Retry' }}",
+        "waitForSubWorkflow": true,
+        "inputData": "={\"taskId\": \"{{ $json.task_id }}\", \"error_message\": \"{{ $error.message }}\", \"workflow_to_retry_id\": \"{{ $workflow.id }}\", \"workflow_params\": \"{{ $json }}\", \"agent_id\": \"A02\"}"
+      },
+      "id": "55c97f8a-7b1b-4b2b-9c3d-1234567890ij",
+      "name": "Handle Error and Retry",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        780,
+        500
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "66c97f8a-7b1b-4b2b-9c3d-1234567890kl",
+      "name": "End Success",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1220,
+        300
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "77c97f8a-7b1b-4b2b-9c3d-1234567890mn",
+      "name": "End Error",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        500
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Update Lead Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Lead Status": {
+      "main": [
+        [
+          {
+            "node": "Log Event (Lead Status Updated)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Event (Lead Status Updated)": {
+      "main": [
+        [
+          {
+            "node": "Call Log Event Function",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Log Event Function": {
+      "main": [
+        [
+          {
+            "node": "End Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Error and Retry": {
+      "main": [
+        [
+          {
+            "node": "End Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "mcp-sub-a02-updateleadstatus",
+  "tags": [
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "eprm-agents",
+      "name": "EPRM Agents"
+    },
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "agent-02",
+      "name": "Agent 02"
+    },
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "mcp-sub",
+      "name": "MCP Sub"
+    }
+  ]
+}

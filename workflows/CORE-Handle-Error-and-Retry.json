@@ -1,0 +1,506 @@
+{
+  "name": "[CORE] Handle-Error-and-Retry",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "name": "Error Context Input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Extract error context parameters\nconst input = $json;\n\nconst task_id = input.task_id;\nconst error_message = input.error_message || 'Unknown error';\nconst workflow_to_retry_id = input.workflow_to_retry_id;\nconst workflow_params = input.workflow_params || {};\nconst agent_id = input.agent_id;\nconst retry_attempt = input.retry_attempt || 0;\n\n// Validate required parameters\nif (!task_id) {\n  throw new Error('task_id is required');\n}\n\nif (!workflow_to_retry_id) {\n  throw new Error('workflow_to_retry_id is required');\n}\n\nif (!agent_id) {\n  throw new Error('agent_id is required');\n}\n\n// Configuration constants\nconst MAX_RETRIES = 3;\nconst BASE_DELAY_MS = 5000; // 5 seconds\nconst BACKOFF_MULTIPLIER = 2;\n\n// Calculate next retry delay with exponential backoff\nconst next_retry_delay_ms = BASE_DELAY_MS * Math.pow(BACKOFF_MULTIPLIER, retry_attempt);\nconst next_retry_schedule_at = new Date(Date.now() + next_retry_delay_ms).toISOString();\n\nreturn {\n  task_id,\n  error_message,\n  workflow_to_retry_id,\n  workflow_params,\n  agent_id,\n  retry_attempt,\n  MAX_RETRIES,\n  next_retry_delay_ms,\n  next_retry_schedule_at,\n  current_timestamp: new Date().toISOString()\n};"
+      },
+      "id": "b2c3d4e5-f6g7-8901-bcde-f23456789012",
+      "name": "Process Error Context",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "[CORE] Log-Event",
+        "parameters": {
+          "log_level": "WARN",
+          "log_message": "Task retry attempt initiated",
+          "task_id": "={{ $json.task_id }}",
+          "agent_id": "={{ $json.agent_id }}",
+          "details": "={{ JSON.stringify({\n  error_message: $json.error_message,\n  retry_attempt: $json.retry_attempt,\n  workflow_to_retry: $json.workflow_to_retry_id,\n  next_retry_at: $json.next_retry_schedule_at\n}) }}"
+        }
+      },
+      "id": "c3d4e5f6-g7h8-9012-cdef-345678901234",
+      "name": "Log Retry Attempt",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "table",
+        "table": "tasks",
+        "operation": "select",
+        "filterType": "manual",
+        "matchingColumns": [
+          {
+            "column": "id",
+            "value": "={{ $json.task_id }}"
+          }
+        ],
+        "options": {
+          "queryName": "get_task_retry_count"
+        }
+      },
+      "id": "d4e5f6g7-h8i9-0123-defg-456789012345",
+      "name": "Get Current Retry Count",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-account",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "retry-limit-check",
+              "leftValue": "={{ $json.retry_count || 0 }}",
+              "rightValue": "={{ $('Process Error Context').item.json.MAX_RETRIES }}",
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e5f6g7h8-i9j0-1234-efgh-567890123456",
+      "name": "Check Retry Limit",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Calculate updated retry information\nconst taskData = $json;\nconst errorContext = $('Process Error Context').item.json;\n\nconst current_retry_count = taskData.retry_count || 0;\nconst new_retry_count = current_retry_count + 1;\nconst timestamp = new Date().toISOString();\n\nreturn {\n  task_id: errorContext.task_id,\n  new_retry_count,\n  last_retry_attempt_at: timestamp,\n  next_retry_schedule_at: errorContext.next_retry_schedule_at,\n  retry_delay_ms: errorContext.next_retry_delay_ms,\n  workflow_to_retry_id: errorContext.workflow_to_retry_id,\n  workflow_params: errorContext.workflow_params,\n  agent_id: errorContext.agent_id,\n  error_message: errorContext.error_message\n};"
+      },
+      "id": "f6g7h8i9-j0k1-2345-fghi-678901234567",
+      "name": "Calculate Retry Update",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1340,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "table",
+        "table": "tasks",
+        "operation": "update",
+        "filterType": "manual",
+        "matchingColumns": [
+          {
+            "column": "id",
+            "value": "={{ $json.task_id }}"
+          }
+        ],
+        "updateColumns": [
+          {
+            "column": "retry_count",
+            "value": "={{ $json.new_retry_count }}"
+          },
+          {
+            "column": "last_retry_attempt_at",
+            "value": "={{ $json.last_retry_attempt_at }}"
+          },
+          {
+            "column": "next_retry_schedule_at",
+            "value": "={{ $json.next_retry_schedule_at }}"
+          },
+          {
+            "column": "status",
+            "value": "retrying"
+          }
+        ]
+      },
+      "id": "g7h8i9j0-k1l2-3456-ghij-789012345678",
+      "name": "Update Task Retry Info",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1560,
+        220
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-account",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": "={{ $json.retry_delay_ms }}",
+        "unit": "ms"
+      },
+      "id": "h8i9j0k1-l2m3-4567-hijk-890123456789",
+      "name": "Wait for Retry Delay",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [
+        1780,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ $json.workflow_to_retry_id }}",
+        "parameters": "={{ $json.workflow_params }}"
+      },
+      "id": "i9j0k1l2-m3n4-5678-ijkl-901234567890",
+      "name": "Execute Retry Workflow",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        2000,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "table",
+        "table": "tasks",
+        "operation": "update",
+        "filterType": "manual",
+        "matchingColumns": [
+          {
+            "column": "id",
+            "value": "={{ $('Calculate Retry Update').item.json.task_id }}"
+          }
+        ],
+        "updateColumns": [
+          {
+            "column": "status",
+            "value": "completed_success"
+          },
+          {
+            "column": "completed_at",
+            "value": "={{ new Date().toISOString() }}"
+          },
+          {
+            "column": "result",
+            "value": "={{ JSON.stringify($json) }}"
+          }
+        ]
+      },
+      "id": "j0k1l2m3-n4o5-6789-jklm-012345678901",
+      "name": "Update Task Success After Retry",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2220,
+        220
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-account",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowId": "[CORE] Log-Event",
+        "parameters": {
+          "log_level": "ERROR",
+          "log_message": "Task failed after maximum retry attempts",
+          "task_id": "={{ $('Process Error Context').item.json.task_id }}",
+          "agent_id": "={{ $('Process Error Context').item.json.agent_id }}",
+          "details": "={{ JSON.stringify({\n  error_message: $('Process Error Context').item.json.error_message,\n  max_retries_reached: $('Process Error Context').item.json.MAX_RETRIES,\n  workflow_failed: $('Process Error Context').item.json.workflow_to_retry_id\n}) }}"
+        }
+      },
+      "id": "k1l2m3n4-o5p6-7890-klmn-123456789012",
+      "name": "Log Critical Failure",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        1340,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "table",
+        "table": "tasks",
+        "operation": "update",
+        "filterType": "manual",
+        "matchingColumns": [
+          {
+            "column": "id",
+            "value": "={{ $('Process Error Context').item.json.task_id }}"
+          }
+        ],
+        "updateColumns": [
+          {
+            "column": "status",
+            "value": "completed_failed"
+          },
+          {
+            "column": "error_message",
+            "value": "={{ $('Process Error Context').item.json.error_message }}"
+          },
+          {
+            "column": "failed_at",
+            "value": "={{ new Date().toISOString() }}"
+          }
+        ]
+      },
+      "id": "l2m3n4o5-p6q7-8901-lmno-234567890123",
+      "name": "Update Task Final Failure",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1560,
+        380
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-account",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowId": "[A13] NotificationManager",
+        "parameters": {
+          "notification_type": "critical_task_failure",
+          "task_id": "={{ $('Process Error Context').item.json.task_id }}",
+          "agent_id": "={{ $('Process Error Context').item.json.agent_id }}",
+          "error_message": "={{ $('Process Error Context').item.json.error_message }}",
+          "organization_id": "={{ $json.organization_id }}",
+          "creator_user_id": "={{ $json.creator_user_id }}"
+        }
+      },
+      "id": "m3n4o5p6-q7r8-9012-mnop-345678901234",
+      "name": "Notify Critical Failure",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        1780,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "[CORE] Log-Event",
+        "parameters": {
+          "log_level": "INFO",
+          "log_message": "Task retry successful after failure",
+          "task_id": "={{ $('Calculate Retry Update').item.json.task_id }}",
+          "agent_id": "={{ $('Calculate Retry Update').item.json.agent_id }}",
+          "details": "={{ JSON.stringify({\n  retry_attempt: $('Calculate Retry Update').item.json.new_retry_count,\n  workflow_retried: $('Calculate Retry Update').item.json.workflow_to_retry_id,\n  result: $json\n}) }}"
+        }
+      },
+      "id": "n4o5p6q7-r8s9-0123-nopq-456789012345",
+      "name": "Log Retry Success",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        2440,
+        220
+      ]
+    }
+  ],
+  "connections": {
+    "Error Context Input": {
+      "main": [
+        [
+          {
+            "node": "Process Error Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Error Context": {
+      "main": [
+        [
+          {
+            "node": "Log Retry Attempt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Retry Attempt": {
+      "main": [
+        [
+          {
+            "node": "Get Current Retry Count",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Current Retry Count": {
+      "main": [
+        [
+          {
+            "node": "Check Retry Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Retry Limit": {
+      "main": [
+        [
+          {
+            "node": "Calculate Retry Update",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Critical Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Retry Update": {
+      "main": [
+        [
+          {
+            "node": "Update Task Retry Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Task Retry Info": {
+      "main": [
+        [
+          {
+            "node": "Wait for Retry Delay",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for Retry Delay": {
+      "main": [
+        [
+          {
+            "node": "Execute Retry Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Retry Workflow": {
+      "main": [
+        [
+          {
+            "node": "Update Task Success After Retry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Task Success After Retry": {
+      "main": [
+        [
+          {
+            "node": "Log Retry Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Critical Failure": {
+      "main": [
+        [
+          {
+            "node": "Update Task Final Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Task Final Failure": {
+      "main": [
+        [
+          {
+            "node": "Notify Critical Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "id": "core",
+      "name": "Core"
+    },
+    {
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "id": "error-handling",
+      "name": "Error Handling"
+    }
+  ],
+  "triggerCount": 0,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}

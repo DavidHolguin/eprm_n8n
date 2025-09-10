@@ -1,0 +1,233 @@
+{
+  "name": "[MCP-SUB] A03-GenerateUserAssignmentReport",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "ef8b4d82-1234-4567-8901-500000000001",
+      "name": "Execute Sub-workflow Trigger",
+      "type": "@n8n/n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [20, 380]
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": "users",
+        "options": {
+          "queryName": "organization_id",
+          "queryValue": "={{$json.organization_id}}",
+          "additionalFields": {
+            "join": "LEFT JOIN roles ON users.role_id = roles.id",
+            "columns": "users.id, users.full_name, users.email, users.is_active, roles.name as role_name, roles.hierarchy_level"
+          }
+        }
+      },
+      "id": "ef8b4d82-1234-4567-8901-500000000002",
+      "name": "Supabase: Fetch User Roles Data",
+      "type": "@n8n/n8n-nodes-supabase.supabase",
+      "typeVersion": 1,
+      "position": [240, 380],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-credentials",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Preprocess and summarize data for LLM\nconst usersData = $node[\"Supabase: Fetch User Roles Data\"].json.data;\nconst organizationId = $input.all()[0].json.organization_id;\nconst reportScope = $input.all()[0].json.report_scope || 'my_hierarchy';\n\n// Count roles distribution\nlet roleCounts = {};\nlet activeUsers = 0;\nlet inactiveUsers = 0;\n\nusersData.forEach(user => {\n  const roleName = user.role_name || 'No Role';\n  roleCounts[roleName] = (roleCounts[roleName] || 0) + 1;\n  \n  if (user.is_active) {\n    activeUsers++;\n  } else {\n    inactiveUsers++;\n  }\n});\n\nconst summaryData = {\n  organization_id: organizationId,\n  report_scope: reportScope,\n  total_users_in_scope: usersData.length,\n  active_users: activeUsers,\n  inactive_users: inactiveUsers,\n  roles_distribution: roleCounts,\n};\n\n// Create prompt summary for LLM\nconst promptSummary = `\nInforme de asignación de roles para la organización con ID: ${organizationId}.\nAlcance del informe: ${reportScope}\nTotal de usuarios en el alcance del informe: ${summaryData.total_users_in_scope}\nUsuarios activos: ${summaryData.active_users}\nUsuarios inactivos: ${summaryData.inactive_users}\n\nDistribución de usuarios por rol:\n${Object.entries(summaryData.roles_distribution).map(([role, count]) => `- ${role}: ${count} usuarios`).join('\\n')}\n`;\n\nreturn [{\n  json: {\n    metrics_summary: summaryData,\n    prompt_summary: promptSummary,\n    organization_id: organizationId,\n    report_scope: reportScope\n  }\n}];"
+      },
+      "id": "ef8b4d82-1234-4567-8901-500000000003",
+      "name": "Code: Preprocess and Summarize Data for LLM",
+      "type": "@n8n/n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 380]
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "operation": "message",
+        "model": "gpt-3.5-turbo",
+        "messages": {
+          "messageValues": [
+            {
+              "role": "system",
+              "content": "Eres un asistente experto en gestión de roles y cumplimiento corporativo. Tu tarea es generar un informe ejecutivo conciso y profesional a partir de los datos de asignación de roles proporcionados. Resalta la distribución de roles y cualquier observación clave. El informe debe ser objetivo, claro y orientado a la toma de decisiones para un gerente o consultor."
+            },
+            {
+              "role": "user", 
+              "content": "Genera un informe de asignación de roles para la organización. Aquí están los datos preprocesados:\\n\\n{{$json.prompt_summary}}\\n\\nPor favor, proporciona un resumen ejecutivo en formato de informe."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ef8b4d82-1234-4567-8901-500000000004",
+      "name": "AI Agent: Generate Report Summary",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1,
+      "position": [680, 380],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-credentials",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowId": "[MCP-SUB] A13-SendCommunication",
+        "options": {
+          "inputData": {
+            "organization_id": "={{$json.organization_id}}",
+            "sender_user_id": "={{$input.all()[0].json.requester_user_id}}",
+            "communication_type": "report",
+            "subject": "Informe de Asignación de Roles - EPRM SUITE",
+            "content": "={{$node[\"AI Agent: Generate Report Summary\"].json.content}}",
+            "confidentiality_level": "confidential",
+            "recipient_user_ids": ["{{$input.all()[0].json.requester_user_id}}"]
+          }
+        }
+      },
+      "id": "ef8b4d82-1234-4567-8901-500000000005",
+      "name": "Execute Workflow: [MCP-SUB] A13-SendCommunication (Send Report)",
+      "type": "@n8n/n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [900, 380]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log report generation and sending event\nconst organizationId = $input.all()[0].json.organization_id;\nconst requesterUserId = $input.all()[0].json.requester_user_id;\nconst taskId = $input.all()[0].json.task_id;\nconst reportContent = $node[\"AI Agent: Generate Report Summary\"].json.content;\nconst communicationId = $node[\"Execute Workflow: [MCP-SUB] A13-SendCommunication (Send Report)\"].json.communication_id || 'N/A';\n\n// Prepare log event parameters\nconst logParams = {\n  log_level: 'INFO',\n  log_message: `Informe de asignación de roles generado y enviado para organización (ID: ${organizationId}) por usuario (ID: ${requesterUserId}). Comunicación ID: ${communicationId}`,\n  task_id: taskId,\n  agent_id: 'A03',\n  details: { \n    organization_id: organizationId,\n    requester_user_id: requesterUserId,\n    communication_id: communicationId\n  }\n};\n\nreturn [{\n  json: {\n    report_content: reportContent,\n    communication_id: communicationId,\n    log_params: logParams\n  }\n}];"
+      },
+      "id": "ef8b4d82-1234-4567-8901-500000000006",
+      "name": "Code: Log Event (Report Generated and Sent)",
+      "type": "@n8n/n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 380]
+    },
+    {
+      "parameters": {
+        "operation": "callFunction",
+        "function": "public.log_event",
+        "arguments": "={{$json.log_params}}"
+      },
+      "id": "ef8b4d82-1234-4567-8901-500000000007",
+      "name": "Supabase: Call Log Event",
+      "type": "@n8n/n8n-nodes-supabase.supabase",
+      "typeVersion": 1,
+      "position": [1340, 380],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-credentials",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Return final output\nreturn [{\n  json: {\n    report_content: $input.all()[0].json.report_content,\n    communication_id: $input.all()[0].json.communication_id\n  }\n}];"
+      },
+      "id": "ef8b4d82-1234-4567-8901-500000000008",
+      "name": "Code: Prepare Final Output",
+      "type": "@n8n/n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 380]
+    }
+  ],
+  "connections": {
+    "Execute Sub-workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Supabase: Fetch User Roles Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase: Fetch User Roles Data": {
+      "main": [
+        [
+          {
+            "node": "Code: Preprocess and Summarize Data for LLM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code: Preprocess and Summarize Data for LLM": {
+      "main": [
+        [
+          {
+            "node": "AI Agent: Generate Report Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent: Generate Report Summary": {
+      "main": [
+        [
+          {
+            "node": "Execute Workflow: [MCP-SUB] A13-SendCommunication (Send Report)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Workflow: [MCP-SUB] A13-SendCommunication (Send Report)": {
+      "main": [
+        [
+          {
+            "node": "Code: Log Event (Report Generated and Sent)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code: Log Event (Report Generated and Sent)": {
+      "main": [
+        [
+          {
+            "node": "Supabase: Call Log Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase: Call Log Event": {
+      "main": [
+        [
+          {
+            "node": "Code: Prepare Final Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "id": "agent-03-sub",
+      "name": "Agent-03-Subworkflows"
+    }
+  ],
+  "triggerCount": 0,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}

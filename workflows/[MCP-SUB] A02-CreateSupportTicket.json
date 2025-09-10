@@ -1,0 +1,220 @@
+{
+  "name": "[MCP-SUB] A02-CreateSupportTicket",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "11h97f8a-7b1b-4b2b-9c3d-1234567890ab",
+      "name": "Start",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [340, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "select": "supabaseCredential",
+        "operation": "insert",
+        "tableId": "support_tickets",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "organization_id",
+              "fieldValue": "={{ $json.organization_id }}"
+            },
+            {
+              "fieldId": "reporter_user_id",
+              "fieldValue": "={{ $json.reporter_user_id }}"
+            },
+            {
+              "fieldId": "subject",
+              "fieldValue": "={{ $json.subject }}"
+            },
+            {
+              "fieldId": "description",
+              "fieldValue": "={{ $json.description }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "open"
+            },
+            {
+              "fieldId": "priority",
+              "fieldValue": "={{ $json.priority || 'medium' }}"
+            },
+            {
+              "fieldId": "is_complaint",
+              "fieldValue": "={{ $json.is_complaint || false }}"
+            }
+          ]
+        }
+      },
+      "id": "22h97f8a-7b1b-4b2b-9c3d-1234567890cd",
+      "name": "Insert Support Ticket",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [560, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ '[MCP-SUB] A13-SendCommunication' }}",
+        "waitForSubWorkflow": true,
+        "inputData": "={\"organization_id\": \"{{ $json.organization_id }}\", \"sender_user_id\": \"{{ $json.reporter_user_id }}\", \"communication_type\": \"notification\", \"subject\": \"Nuevo Ticket de Soporte: {{ $json.subject }} (Prioridad: {{ $json.priority || 'medium' }})\", \"content\": \"Se ha creado un nuevo ticket de soporte con ID {{ $node[\\\"Insert Support Ticket\\\"].json.id }} y descripción: {{ $json.description }}\", \"confidentiality_level\": \"restricted\", \"recipient_roles\": [\"tech_support\"]}"
+      },
+      "id": "33h97f8a-7b1b-4b2b-9c3d-1234567890ef",
+      "name": "Notify Tech Support",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [780, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log the ticket creation event\nconst ticketId = $node[\"Insert Support Ticket\"].json.id;\nconst reporterUserId = $json.reporter_user_id;\nconst isComplaint = $json.is_complaint || false;\nconst taskId = $json.task_id;\n\nconst logEventData = {\n  log_level: 'INFO',\n  log_message: `Ticket de soporte (ID: ${ticketId}) creado por ${reporterUserId}`,\n  task_id: taskId,\n  agent_id: 'A02',\n  details: { \n    ticket_id: ticketId,\n    is_complaint: isComplaint,\n    priority: $json.priority || 'medium',\n    subject: $json.subject\n  }\n};\n\nreturn {\n  json: {\n    ticket_id: ticketId,\n    log_event_data: logEventData\n  }\n};"
+      },
+      "id": "44h97f8a-7b1b-4b2b-9c3d-1234567890gh",
+      "name": "Log Event (Ticket Created)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "select": "supabaseCredential",
+        "operation": "callFunction",
+        "functionName": "log_event",
+        "functionArgs": "={{ $json.log_event_data }}"
+      },
+      "id": "55h97f8a-7b1b-4b2b-9c3d-1234567890ij",
+      "name": "Call Log Event Function",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1220, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ '[CORE] Handle-Error-and-Retry' }}",
+        "waitForSubWorkflow": true,
+        "inputData": "={\"taskId\": \"{{ $json.task_id }}\", \"error_message\": \"{{ $error.message }}\", \"workflow_to_retry_id\": \"{{ $workflow.id }}\", \"workflow_params\": \"{{ $json }}\", \"agent_id\": \"A02\"}"
+      },
+      "id": "66h97f8a-7b1b-4b2b-9c3d-1234567890kl",
+      "name": "Handle Error and Retry",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1000, 500]
+    },
+    {
+      "parameters": {},
+      "id": "77h97f8a-7b1b-4b2b-9c3d-1234567890mn",
+      "name": "End Success",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1440, 300]
+    },
+    {
+      "parameters": {},
+      "id": "88h97f8a-7b1b-4b2b-9c3d-1234567890op",
+      "name": "End Error",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1220, 500]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Insert Support Ticket",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Support Ticket": {
+      "main": [
+        [
+          {
+            "node": "Notify Tech Support",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Tech Support": {
+      "main": [
+        [
+          {
+            "node": "Log Event (Ticket Created)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Event (Ticket Created)": {
+      "main": [
+        [
+          {
+            "node": "Call Log Event Function",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Log Event Function": {
+      "main": [
+        [
+          {
+            "node": "End Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Error and Retry": {
+      "main": [
+        [
+          {
+            "node": "End Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "mcp-sub-a02-createsupportticket",
+  "tags": [
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "eprm-agents",
+      "name": "EPRM Agents"
+    },
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "agent-02",
+      "name": "Agent 02"
+    },
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "mcp-sub",
+      "name": "MCP Sub"
+    }
+  ]
+}

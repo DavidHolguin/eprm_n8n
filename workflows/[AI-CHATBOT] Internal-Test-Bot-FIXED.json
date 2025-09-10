@@ -1,0 +1,354 @@
+{
+  "name": "[AI-CHATBOT] Internal-Test-Bot",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "manual-trigger",
+      "name": "Manual Chatbot Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Simular entrada del chatbot interno\n// Puedes modificar este mensaje para probar diferentes comandos\nconst testMessages = [\n  \"ejecuta una prueba de análisis de datos\",\n  \"quiero probar el procesamiento de documentos\", \n  \"corre la prueba de gestión de roles\",\n  \"prueba la integración con APIs\",\n  \"help\",\n  \"status\",\n  \"histórico\"\n];\n\n// Seleccionar mensaje (puedes cambiar el índice o hacer random)\nconst selectedMessage = testMessages[0]; // Cambia el índice para probar diferentes mensajes\n\n// También puedes usar un mensaje personalizado:\n// const selectedMessage = \"tu mensaje personalizado aquí\";\n\nconst userId = 'n8n_internal_user';\nconst sessionId = `n8n_session_${Date.now()}`;\n\nconsole.log(`🤖 Simulando chatbot con mensaje: \"${selectedMessage}\"`);\n\nreturn {\n  original_message: selectedMessage,\n  clean_message: selectedMessage.toLowerCase().trim(),\n  user_id: userId,\n  session_id: sessionId,\n  timestamp: new Date().toISOString(),\n  message_length: selectedMessage.length,\n  source: 'n8n_internal'\n};"
+      },
+      "id": "simulate-chat-input",
+      "name": "Simulate Chat Input",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-3.5-turbo",
+        "options": {
+          "temperature": 0.3,
+          "maxTokens": 500
+        },
+        "messages": {
+          "messages": [
+            {
+              "role": "system",
+              "content": "Eres un asistente especializado en interpretar comandos para probar workflows de orquestación de tareas. Tu trabajo es analizar mensajes de usuarios y determinar qué tipo de prueba quieren ejecutar.\\n\\nTipos de prueba disponibles:\\n1. default - Análisis de datos básico\\n2. document_processing - Procesamiento de documentos\\n3. api_integration - Integración con APIs\\n4. workflow_automation - Automatización de workflows\\n5. role_management - Gestión de roles\\n6. user_creation - Creación de usuarios\\n7. organization_setup - Configuración de organizaciones\\n8. report_generation - Generación de reportes\\n\\nComandos especiales:\\n- \\\"lista\\\" o \\\"help\\\" - Mostrar tipos disponibles\\n- \\\"status\\\" - Verificar estado del sistema\\n- \\\"histórico\\\" o \\\"logs\\\" - Mostrar últimas pruebas\\n\\nResponde SIEMPRE en formato JSON:\\n{\\n  \\\"intent\\\": \\\"test_run\\\" | \\\"help\\\" | \\\"status\\\" | \\\"logs\\\" | \\\"unknown\\\",\\n  \\\"test_case\\\": \\\"tipo_de_prueba\\\" | null,\\n  \\\"parameters\\\": {} | null,\\n  \\\"confidence\\\": 0.0-1.0,\\n  \\\"response_message\\\": \\\"mensaje para el usuario\\\",\\n  \\\"needs_clarification\\\": true/false\\n}\\n\\nEjemplos:\\n- \\\"quiero probar el procesamiento de documentos\\\" → {\\\"intent\\\": \\\"test_run\\\", \\\"test_case\\\": \\\"document_processing\\\", \\\"confidence\\\": 0.9}\\n- \\\"ayuda\\\" → {\\\"intent\\\": \\\"help\\\", \\\"confidence\\\": 1.0}\\n- \\\"ejecuta análisis de datos\\\" → {\\\"intent\\\": \\\"test_run\\\", \\\"test_case\\\": \\\"default\\\", \\\"confidence\\\": 0.8}"
+            },
+            {
+              "role": "user",
+              "content": "={{ $json.original_message }}"
+            }
+          ]
+        }
+      },
+      "id": "ai-intent-recognition",
+      "name": "AI Intent Recognition",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [680, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-account",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Parse AI response and extract intent\nconst aiResponse = $json.message?.content || $json.choices?.[0]?.message?.content || '';\nconst originalInput = $('Simulate Chat Input').item.json;\n\nlet parsedResponse = {};\ntry {\n  // Try to parse JSON response from AI\n  parsedResponse = JSON.parse(aiResponse);\n} catch (error) {\n  console.error('Failed to parse AI response:', error);\n  // Fallback parsing\n  parsedResponse = {\n    intent: 'unknown',\n    test_case: null,\n    parameters: null,\n    confidence: 0.0,\n    response_message: 'No pude entender tu solicitud. ¿Puedes ser más específico?',\n    needs_clarification: true\n  };\n}\n\n// Validate required fields\nif (!parsedResponse.intent) parsedResponse.intent = 'unknown';\nif (typeof parsedResponse.confidence !== 'number') parsedResponse.confidence = 0.5;\nif (!parsedResponse.response_message) parsedResponse.response_message = 'Procesando tu solicitud...';\n\n// Add metadata\nparsedResponse.original_message = originalInput.original_message;\nparsedResponse.user_id = originalInput.user_id;\nparsedResponse.session_id = originalInput.session_id;\nparsedResponse.timestamp = new Date().toISOString();\nparsedResponse.source = originalInput.source;\n\nconsole.log(`🎯 AI Intent parsed: ${parsedResponse.intent} (confidence: ${parsedResponse.confidence})`);\nif (parsedResponse.test_case) {\n  console.log(`📋 Test case identified: ${parsedResponse.test_case}`);\n}\n\nreturn parsedResponse;"
+      },
+      "id": "parse-intent",
+      "name": "Parse AI Intent",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "test-run-condition",
+              "leftValue": "={{ $json.intent }}",
+              "rightValue": "test_run",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "route-intent",
+      "name": "Route by Intent",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/test-orchestrator",
+        "authentication": "none",
+        "requestMethod": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Chatbot-User",
+              "value": "={{ $json.user_id }}"
+            },
+            {
+              "name": "X-Chatbot-Session",
+              "value": "={{ $json.session_id }}"
+            },
+            {
+              "name": "X-Chatbot-Source",
+              "value": "n8n-internal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "={{ JSON.stringify({\n  testCase: $json.test_case,\n  parameters: $json.parameters || {},\n  chatbot_triggered: true,\n  user_id: $json.user_id,\n  session_id: $json.session_id,\n  original_message: $json.original_message,\n  source: 'n8n_internal'\n}) }}",
+        "options": {
+          "timeout": 45000,
+          "retry": {
+            "enabled": true,
+            "maxTries": 2
+          }
+        }
+      },
+      "id": "execute-test",
+      "name": "Execute Test Workflow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1340, 220]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "help-condition",
+              "leftValue": "={{ $json.intent }}",
+              "rightValue": "help",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-help-intent",
+      "name": "Check Help Intent",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 450]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Handle help request\nconst intentData = $json;\nconst availableTests = [\n  { name: 'default', description: 'Análisis de datos básico' },\n  { name: 'document_processing', description: 'Procesamiento de documentos' },\n  { name: 'api_integration', description: 'Integración con APIs' },\n  { name: 'workflow_automation', description: 'Automatización de workflows' },\n  { name: 'role_management', description: 'Gestión de roles y permisos' },\n  { name: 'user_creation', description: 'Creación de usuarios' },\n  { name: 'organization_setup', description: 'Configuración de organizaciones' },\n  { name: 'report_generation', description: 'Generación de reportes' }\n];\n\nconst helpMessage = `🤖 **Asistente de Pruebas de Orquestador (N8N Interno)**\\n\\n**Comandos disponibles:**\\n\\n📋 **Tipos de prueba:**\\n${availableTests.map(test => \n  `• ${test.name} - ${test.description}`\n).join('\\n')}\\n\\n💬 **Ejemplos de uso:**\\n• \\\"Ejecuta una prueba de análisis de datos\\\"\\n• \\\"Quiero probar el procesamiento de documentos\\\"\\n• \\\"Corre la prueba de gestión de roles\\\"\\n• \\\"Prueba la integración con APIs\\\"\\n\\n🔧 **Otros comandos:**\\n• help - Mostrar esta ayuda\\n• status - Verificar estado del sistema\\n\\n📝 **Para cambiar el mensaje:**\\n• Edita el nodo \\\"Simulate Chat Input\\\"\\n• Modifica la variable \\\"selectedMessage\\\"\\n• Vuelve a ejecutar el workflow\\n\\n¡Mensaje actual: \\\"${intentData.original_message}\\\"!`;\n\nconsole.log('📋 Mostrando ayuda del chatbot interno');\n\nreturn {\n  intent: intentData.intent,\n  user_id: intentData.user_id,\n  session_id: intentData.session_id,\n  response_type: 'help',\n  message: helpMessage,\n  timestamp: new Date().toISOString(),\n  source: intentData.source\n};"
+      },
+      "id": "handle-help",
+      "name": "Handle Help Request",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1340, 450]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Format test execution result for internal chatbot\nconst testResult = $json;\nconst intentData = $('Parse AI Intent').item.json;\n\nlet responseMessage = '';\nlet success = false;\n\nconsole.log('📊 Formateando resultado de prueba para chatbot interno');\n\nif (testResult.test_status === 'SUCCESS') {\n  success = true;\n  const validation = testResult.validation || {};\n  const executionTime = testResult.test_duration_ms || 0;\n  \n  responseMessage = `✅ **Prueba Ejecutada Exitosamente (N8N Interno)**\\n\\n` +\n    `🧪 **Caso de prueba:** ${testResult.test_case}\\n` +\n    `⏱️ **Tiempo de ejecución:** ${executionTime}ms\\n` +\n    `🆔 **Task ID generado:** \\`${testResult.orchestrator_response?.task_id || 'N/A'}\\`\\n` +\n    `🤖 **Agente asignado:** ${testResult.orchestrator_response?.assigned_agent_id || 'N/A'}\\n` +\n    `📊 **Estado:** ${testResult.orchestrator_response?.status || 'N/A'}\\n` +\n    `🔧 **Ejecutado desde:** N8N Editor\\n\\n` +\n    `✅ **Validaciones:**\\n`;\n    \n  if (validation.has_task_id) responseMessage += '• Task ID generado: ✅\\n';\n  if (validation.has_assigned_agent) responseMessage += '• Agente asignado: ✅\\n';\n  if (validation.status_is_completed) responseMessage += '• Estado completado: ✅\\n';\n  if (validation.execution_time_reasonable) responseMessage += '• Tiempo razonable: ✅\\n';\n  \n  responseMessage += `\\n🎯 **Resultado general:** ${validation.overall_passed ? 'TODAS LAS VALIDACIONES PASARON' : 'ALGUNAS VALIDACIONES FALLARON'}\\n\\n` +\n    `🔄 **Para ejecutar otra prueba:**\\n` +\n    `• Edita el nodo \\\"Simulate Chat Input\\\"\\n` +\n    `• Cambia el mensaje de prueba\\n` +\n    `• Vuelve a ejecutar el workflow`;\n  \n} else {\n  success = false;\n  const errorDetails = testResult.error_details || {};\n  \n  responseMessage = `❌ **Error en la Prueba (N8N Interno)**\\n\\n` +\n    `🧪 **Caso de prueba:** ${testResult.test_case}\\n` +\n    `💥 **Error:** ${errorDetails.error || 'Error desconocido'}\\n` +\n    `🏷️ **Tipo de error:** ${errorDetails.errorType || 'unknown'}\\n` +\n    `🔄 **Se puede reintentar:** ${errorDetails.shouldRetry ? 'Sí' : 'No'}\\n` +\n    `🔧 **Ejecutado desde:** N8N Editor\\n\\n`;\n    \n  if (errorDetails.shouldRetry && errorDetails.retryDelay) {\n    responseMessage += `⏰ **Tiempo de espera:** ${errorDetails.retryDelay}ms\\n\\n`;\n  }\n  \n  responseMessage += `🔧 **Soluciones sugeridas:**\\n` +\n    `• Verificar que A01-Master-Task-Orchestrator esté activo\\n` +\n    `• Confirmar conexión a Supabase\\n` +\n    `• Validar parámetros de la prueba\\n` +\n    `• Revisar logs del sistema en N8N\\n` +\n    `• Comprobar credenciales de OpenAI\\n\\n` +\n    `🔄 **Para intentar de nuevo:**\\n` +\n    `• Vuelve a ejecutar el workflow\\n` +\n    `• O cambia el mensaje en \\\"Simulate Chat Input\\\"`;\n}\n\nreturn {\n  intent: intentData.intent,\n  user_id: intentData.user_id,\n  session_id: intentData.session_id,\n  response_type: 'test_result',\n  message: responseMessage,\n  success: success,\n  test_case: testResult.test_case,\n  task_id: testResult.orchestrator_response?.task_id || null,\n  timestamp: new Date().toISOString(),\n  source: intentData.source\n};"
+      },
+      "id": "format-test-result",
+      "name": "Format Test Result",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1560, 220]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Handle unknown or unclear requests for internal chatbot\nconst intentData = $json;\n\nconst suggestions = [\n  'análisis de datos',\n  'procesamiento de documentos',\n  'integración con APIs',\n  'gestión de roles',\n  'creación de usuarios'\n];\n\nconst randomSuggestion = suggestions[Math.floor(Math.random() * suggestions.length)];\n\nconst responseMessage = `🤔 **No entendí tu solicitud (N8N Interno)**\\n\\n` +\n  `Tu mensaje: \\\"${intentData.original_message}\\\"\\n\\n` +\n  `💡 **Sugerencias:**\\n` +\n  `• \\\"Ejecuta una prueba de ${randomSuggestion}\\\"\\n` +\n  `• \\\"Quiero probar el procesamiento de documentos\\\"\\n` +\n  `• \\\"Corre la prueba de gestión de roles\\\"\\n` +\n  `• \\\"help\\\" - Para ver todos los comandos\\n` +\n  `• \\\"status\\\" - Para ver el estado del sistema\\n\\n` +\n  `🎯 **Tips para N8N:**\\n` +\n  `• Edita el nodo \\\"Simulate Chat Input\\\"\\n` +\n  `• Cambia la variable \\\"selectedMessage\\\"\\n` +\n  `• Usa lenguaje natural como \\\"quiero probar...\\\"\\n` +\n  `• Revisa los logs en tiempo real en N8N\\n\\n` +\n  `🔄 **Para probar otro mensaje:**\\n` +\n  `1. Modifica el mensaje en el primer nodo\\n` +\n  `2. Guarda el workflow\\n` +\n  `3. Ejecuta de nuevo`;\n\nconsole.log('🤔 Manejando solicitud no reconocida en chatbot interno');\n\nreturn {\n  intent: intentData.intent,\n  user_id: intentData.user_id,\n  session_id: intentData.session_id,\n  response_type: 'unknown',\n  message: responseMessage,\n  needs_clarification: true,\n  timestamp: new Date().toISOString(),\n  source: intentData.source\n};"
+      },
+      "id": "handle-unknown",
+      "name": "Handle Unknown Request",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1340, 580]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Display final chatbot response in N8N console\nconst response = $json;\n\nconsole.log('\\n' + '='.repeat(80));\nconsole.log('🤖 RESPUESTA DEL CHATBOT INTERNO');\nconsole.log('='.repeat(80));\nconsole.log('');\nconsole.log(`👤 Usuario: ${response.user_id}`);\nconsole.log(`🔗 Sesión: ${response.session_id}`);\nconsole.log(`🎯 Intención: ${response.intent}`);\nconsole.log(`📋 Tipo: ${response.response_type}`);\nif (response.test_case) {\n  console.log(`🧪 Caso de prueba: ${response.test_case}`);\n}\nif (response.task_id) {\n  console.log(`🆔 Task ID: ${response.task_id}`);\n}\nconsole.log(`⏰ Timestamp: ${response.timestamp}`);\nconsole.log('');\nconsole.log('💬 MENSAJE:');\nconsole.log('-'.repeat(40));\n\n// Split message by \\n and display each line\nconst messageLines = response.message.split('\\n');\nmessageLines.forEach(line => {\n  console.log(line);\n});\n\nconsole.log('');\nconsole.log('-'.repeat(40));\nconsole.log(`✨ Éxito: ${response.success || false}`);\nconsole.log('='.repeat(80));\n\nreturn {\n  chatbot_response: response.message,\n  success: response.success || false,\n  intent: response.intent,\n  response_type: response.response_type,\n  test_case: response.test_case || null,\n  task_id: response.task_id || null,\n  user_id: response.user_id,\n  session_id: response.session_id,\n  timestamp: response.timestamp,\n  source: response.source,\n  formatted_for_console: true\n};"
+      },
+      "id": "display-response",
+      "name": "Display Chatbot Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1780, 450]
+    }
+  ],
+  "connections": {
+    "Manual Chatbot Trigger": {
+      "main": [
+        [
+          {
+            "node": "Simulate Chat Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simulate Chat Input": {
+      "main": [
+        [
+          {
+            "node": "AI Intent Recognition",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Intent Recognition": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Intent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Intent": {
+      "main": [
+        [
+          {
+            "node": "Route by Intent",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Check Help Intent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Intent": {
+      "main": [
+        [
+          {
+            "node": "Execute Test Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Handle Unknown Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Test Workflow": {
+      "main": [
+        [
+          {
+            "node": "Format Test Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Help Intent": {
+      "main": [
+        [
+          {
+            "node": "Handle Help Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Handle Help Request": {
+      "main": [
+        [
+          {
+            "node": "Display Chatbot Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Test Result": {
+      "main": [
+        [
+          {
+            "node": "Display Chatbot Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Unknown Request": {
+      "main": [
+        [
+          {
+            "node": "Display Chatbot Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "id": "ai-chatbot-internal",
+      "name": "AI Chatbot Internal"
+    },
+    {
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "id": "testing",
+      "name": "Testing"
+    }
+  ],
+  "triggerCount": 0,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}

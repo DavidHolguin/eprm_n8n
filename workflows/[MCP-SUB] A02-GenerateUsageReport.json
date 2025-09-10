@@ -1,0 +1,283 @@
+{
+  "name": "[MCP-SUB] A02-GenerateUsageReport",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "11f97f8a-7b1b-4b2b-9c3d-1234567890ab",
+      "name": "Start",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        340,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "select": "supabaseCredential",
+        "operation": "select",
+        "tableId": "platform_usage_logs",
+        "filterType": "manual",
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "created_at",
+              "rightValue": "={{ $json.start_date }}",
+              "operator": {
+                "type": "dateTime",
+                "operation": "afterOrEqual"
+              }
+            },
+            {
+              "leftValue": "created_at",
+              "rightValue": "={{ $json.end_date }}",
+              "operator": {
+                "type": "dateTime",
+                "operation": "beforeOrEqual"
+              }
+            },
+            {
+              "leftValue": "organization_id",
+              "rightValue": "={{ $json.organization_id }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        }
+      },
+      "id": "22f97f8a-7b1b-4b2b-9c3d-1234567890cd",
+      "name": "Fetch Usage Logs",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        560,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Preprocess and summarize usage data for LLM optimization\nconst logs = $json.data || [];\n\nlet totalDuration = 0;\nconst featureCounts = {};\nconst uniqueUsers = new Set();\nconst dailyUsage = {};\n\nlogs.forEach(log => {\n  totalDuration += log.duration_seconds || 0;\n  featureCounts[log.feature_used] = (featureCounts[log.feature_used] || 0) + 1;\n  uniqueUsers.add(log.user_id);\n  \n  const date = new Date(log.created_at).toISOString().split('T')[0];\n  dailyUsage[date] = (dailyUsage[date] || 0) + (log.duration_seconds || 0);\n});\n\n// Calculate metrics summary\nconst metricsSummary = {\n  total_logs: logs.length,\n  total_duration_seconds: totalDuration,\n  total_duration_hours: Math.round(totalDuration / 3600 * 100) / 100,\n  unique_users_count: uniqueUsers.size,\n  features_used_counts: featureCounts,\n  daily_usage_seconds: dailyUsage,\n  period: {\n    start_date: $json.start_date,\n    end_date: $json.end_date\n  }\n};\n\n// Create optimized prompt summary for LLM\nconst topFeatures = Object.entries(featureCounts)\n  .sort(([,a], [,b]) => b - a)\n  .slice(0, 10)\n  .map(([feature, count]) => `${feature}: ${count} usos`)\n  .join(', ');\n\nconst promptSummary = `Datos de uso consolidados para la organización ${$json.organization_id}:\n` +\n                      `Período: ${$json.start_date} a ${$json.end_date}\\n` +\n                      `- Total de registros de uso: ${metricsSummary.total_logs}\\n` +\n                      `- Duración total de uso: ${metricsSummary.total_duration_hours} horas\\n` +\n                      `- Usuarios únicos activos: ${metricsSummary.unique_users_count}\\n` +\n                      `- Top características utilizadas: ${topFeatures}\\n` +\n                      `- Promedio de uso diario: ${Math.round(totalDuration / Object.keys(dailyUsage).length / 3600 * 100) / 100} horas por día`;\n\nreturn {\n  json: {\n    metrics_summary: metricsSummary,\n    prompt_summary: promptSummary,\n    organization_id: $json.organization_id,\n    period: metricsSummary.period\n  }\n};"
+      },
+      "id": "33f97f8a-7b1b-4b2b-9c3d-1234567890ef",
+      "name": "Preprocess and Summarize Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "text",
+        "operation": "message",
+        "model": "gpt-4",
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "Eres un asistente de gestión de cuentas experto en analizar el uso de plataformas SaaS. Tu tarea es generar un informe ejecutivo conciso y profesional a partir de los datos de uso proporcionados. Resalta las tendencias clave, la adopción de funcionalidades y un estimado de ahorro de tiempo. El informe debe ser objetivo y orientado al valor para el cliente."
+            },
+            {
+              "role": "user",
+              "content": "Genera un informe de uso para la organización {{ $json.organization_id }} para el período desde {{ $json.period.start_date }} hasta {{ $json.period.end_date }}. Aquí están los datos preprocesados:\\n\\n{{ $json.prompt_summary }}\\n\\nPor favor, incluye un estimado del ahorro de tiempo basado en la duración total de uso y proporciona recomendaciones para maximizar el valor de la plataforma."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "44f97f8a-7b1b-4b2b-9c3d-1234567890gh",
+      "name": "AI Generate Report Summary",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log the report generation event and prepare final output\nconst reportContent = $node[\"AI Generate Report Summary\"].json.message.content;\nconst metricsSummary = $node[\"Preprocess and Summarize Data\"].json.metrics_summary;\nconst organizationId = $json.organization_id;\nconst taskId = $json.task_id;\n\n// Call log_event function\nconst logEventData = {\n  log_level: 'INFO',\n  log_message: `Informe de uso generado para ${organizationId} (Período: ${$json.start_date} - ${$json.end_date})`,\n  task_id: taskId,\n  agent_id: 'A02',\n  details: { \n    organization_id: organizationId,\n    period_start: $json.start_date,\n    period_end: $json.end_date,\n    total_logs: metricsSummary.total_logs,\n    total_duration_hours: metricsSummary.total_duration_hours\n  }\n};\n\nreturn {\n  json: {\n    report_content: reportContent,\n    metrics_summary: metricsSummary,\n    organization_id: organizationId,\n    log_event_data: logEventData\n  }\n};"
+      },
+      "id": "55f97f8a-7b1b-4b2b-9c3d-1234567890ij",
+      "name": "Log Event (Report Generated)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "select": "supabaseCredential",
+        "operation": "callFunction",
+        "functionName": "log_event",
+        "functionArgs": "={{ $json.log_event_data }}"
+      },
+      "id": "66f97f8a-7b1b-4b2b-9c3d-1234567890kl",
+      "name": "Call Log Event Function",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ '[CORE] Handle-Error-and-Retry' }}",
+        "waitForSubWorkflow": true,
+        "inputData": "={\"taskId\": \"{{ $json.task_id }}\", \"error_message\": \"{{ $error.message }}\", \"workflow_to_retry_id\": \"{{ $workflow.id }}\", \"workflow_params\": \"{{ $json }}\", \"agent_id\": \"A02\"}"
+      },
+      "id": "77f97f8a-7b1b-4b2b-9c3d-1234567890mn",
+      "name": "Handle Error and Retry",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        500
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "88f97f8a-7b1b-4b2b-9c3d-1234567890op",
+      "name": "End Success",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1660,
+        300
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "99f97f8a-7b1b-4b2b-9c3d-1234567890qr",
+      "name": "End Error",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1220,
+        500
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Fetch Usage Logs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Usage Logs": {
+      "main": [
+        [
+          {
+            "node": "Preprocess and Summarize Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preprocess and Summarize Data": {
+      "main": [
+        [
+          {
+            "node": "AI Generate Report Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Generate Report Summary": {
+      "main": [
+        [
+          {
+            "node": "Log Event (Report Generated)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Event (Report Generated)": {
+      "main": [
+        [
+          {
+            "node": "Call Log Event Function",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Log Event Function": {
+      "main": [
+        [
+          {
+            "node": "End Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Error and Retry": {
+      "main": [
+        [
+          {
+            "node": "End Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "mcp-sub-a02-generateusagereport",
+  "tags": [
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "eprm-agents",
+      "name": "EPRM Agents"
+    },
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "agent-02",
+      "name": "Agent 02"
+    },
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "mcp-sub",
+      "name": "MCP Sub"
+    }
+  ]
+}

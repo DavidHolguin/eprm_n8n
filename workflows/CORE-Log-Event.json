@@ -1,0 +1,115 @@
+{
+  "name": "[CORE] Log-Event",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "z1y2x3w4-v5u6-7890-zyxw-vu9876543210",
+      "name": "Log Event Input",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Process and validate log event parameters\nconst input = $json;\n\nconst log_level = input.log_level || 'INFO';\nconst log_message = input.log_message || 'No message provided';\nconst task_id = input.task_id || null;\nconst agent_id = input.agent_id || null;\nconst details = input.details || null;\n\n// Validate log level\nconst valid_levels = ['DEBUG', 'INFO', 'WARN', 'ERROR'];\nif (!valid_levels.includes(log_level)) {\n  throw new Error(`Invalid log_level: ${log_level}. Must be one of: ${valid_levels.join(', ')}`);\n}\n\n// Generate trace_id for this log entry\nconst trace_id = `trace_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;\nconst timestamp = new Date().toISOString();\n\n// Parse details if it's a string\nlet parsed_details = details;\nif (typeof details === 'string') {\n  try {\n    parsed_details = JSON.parse(details);\n  } catch (e) {\n    parsed_details = { raw_details: details };\n  }\n}\n\nreturn {\n  log_level,\n  log_message,\n  task_id,\n  agent_id,\n  details: parsed_details,\n  trace_id,\n  created_at: timestamp,\n  workflow_name: 'Log-Event',\n  execution_context: {\n    n8n_execution_id: $executionId,\n    n8n_workflow_id: $workflow.id,\n    timestamp: timestamp\n  }\n};"
+      },
+      "id": "y2x3w4v5-u6t7-8901-yxwv-ut8765432109",
+      "name": "Process Log Parameters",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "function",
+        "function": "log_event",
+        "parameters": {
+          "p_log_level": "={{ $json.log_level }}",
+          "p_log_message": "={{ $json.log_message }}",
+          "p_task_id": "={{ $json.task_id }}",
+          "p_agent_id": "={{ $json.agent_id }}",
+          "p_details": "={{ JSON.stringify($json.details) }}",
+          "p_trace_id": "={{ $json.trace_id }}",
+          "p_workflow_name": "={{ $json.workflow_name }}",
+          "p_execution_context": "={{ JSON.stringify($json.execution_context) }}"
+        }
+      },
+      "id": "x3w4v5u6-t7s8-9012-xwvu-ts7654321098",
+      "name": "Call Supabase log_event Function",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        680,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-account",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "log-success-check",
+              "leftValue": "={{ $json.success }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "w4v5u6t7-s8r9-0123-wvut-sr6543210987",
+      "name": "Check Log Success",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Return successful log entry confirmation\nconst logResult = $json;\nconst originalParams = $('Process Log Parameters').item.json;\n\nreturn {\n  success: true,\n  log_entry_id: logResult.log_entry_id,\n  trace_id: originalParams.trace_id,\n  log_level: originalParams.log_level,\n  message: 'Log event successfully recorded',\n  timestamp: originalParams.created_at\n};"
+      },
+      "id": "v5u6t7s8-r9q0-1234-vutr-sq5432109876",
+      "name": "Format Success Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "table",
+        "table": "execution_logs",
+        "operation": "insert",
+        "dataToInsert": "defineInNode",
+        "columnsToMatchOn": [],
+        "valuesToSend": {
+          "log_level": "ERROR",
+          "log_message": "Failed to log event via log_event function",
+          "task_id": "={{ $('Process Log Parameters').item.json.task_id }}",
+          "agent_id": "={{ $('Process Log Parameters').item.json.agent_id }}",
+          "details": "={{ JSON.stringify({\n  original_log_level: $('Process Log Parameters').item.json.log_level,\n  original_message: $('Process Log Parameters').item.json.log_message,\n  error: $json.error || 'Unknown error',\n  trace_id: $('Process Log Parameters').item.json.trace_id\n}) }}",\n  "trace_id": "={{ $('Process Log Parameters').item.json.trace_id }}",\n  "workflow_name": "Log-Event-Fallback",\n  "created_at": "={{ new Date().toISOString() }}"\n        }\n      },\n      "id": "u6t7s8r9-q0p1-2345-utsr-pq4321098765",\n      "name": "Fallback Direct Insert",\n      "type": "n8n-nodes-base.supabase",\n      "typeVersion": 1,\n      "position": [\n        1120,\n        380\n      ],\n      "credentials": {\n        "supabaseApi": {\n          "id": "supabase-account",\n          "name": "Supabase account"\n        }\n      }\n    },\n    {\n      "parameters": {\n        "functionCode": "// Return error response for failed log attempt\nconst error = $json.error || 'Unknown logging error';\nconst originalParams = $('Process Log Parameters').item.json;\n\nconsole.error(`Failed to log event: ${error}`);\n\nreturn {\n  success: false,\n  error: error,\n  trace_id: originalParams.trace_id,\n  original_log_level: originalParams.log_level,\n  original_message: originalParams.log_message,\n  fallback_attempted: true,\n  timestamp: new Date().toISOString()\n};"\n      },\n      "id": "t7s8r9q0-p1o2-3456-tsrq-po3210987654",\n      "name": "Format Error Response",\n      "type": "n8n-nodes-base.function",\n      "typeVersion": 1,\n      "position": [\n        1340,\n        380\n      ]\n    }\n  ],\n  "connections": {\n    "Log Event Input": {\n      "main": [\n        [\n          {\n            "node": "Process Log Parameters",\n            "type": "main",\n            "index": 0\n          }\n        ]\n      ]\n    },\n    "Process Log Parameters": {\n      "main": [\n        [\n          {\n            "node": "Call Supabase log_event Function",\n            "type": "main",\n            "index": 0\n          }\n        ]\n      ]\n    },\n    "Call Supabase log_event Function": {\n      "main": [\n        [\n          {\n            "node": "Check Log Success",\n            "type": "main",\n            "index": 0\n          }\n        ]\n      ]\n    },\n    "Check Log Success": {\n      "main": [\n        [\n          {\n            "node": "Format Success Response",\n            "type": "main",\n            "index": 0\n          }\n        ],\n        [\n          {\n            "node": "Fallback Direct Insert",\n            "type": "main",\n            "index": 0\n          }\n        ]\n      ]\n    },\n    "Fallback Direct Insert": {\n      "main": [\n        [\n          {\n            "node": "Format Error Response",\n            "type": "main",\n            "index": 0\n          }\n        ]\n      ]\n    }\n  },\n  "settings": {\n    "executionOrder": "v1"\n  },\n  "staticData": null,\n  "tags": [\n    {\n      "createdAt": "2024-01-01T00:00:00.000Z",\n      "updatedAt": "2024-01-01T00:00:00.000Z",\n      "id": "core",\n      "name": "Core"\n    },\n    {\n      "createdAt": "2024-01-01T00:00:00.000Z",\n      "updatedAt": "2024-01-01T00:00:00.000Z",\n      "id": "logging",\n      "name": "Logging"\n    }\n  ],\n  "triggerCount": 0,\n  "updatedAt": "2024-01-01T00:00:00.000Z",\n  "versionId": "1"\n}

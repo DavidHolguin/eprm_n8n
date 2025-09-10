@@ -1,0 +1,298 @@
+{
+  "name": "[MCP-SUB] A02-UpdateSupportTicket",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "11i97f8a-7b1b-4b2b-9c3d-1234567890ab",
+      "name": "Start",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [340, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "select": "supabaseCredential",
+        "operation": "select",
+        "tableId": "support_tickets",
+        "filterType": "manual",
+        "matchingColumns": [
+          {
+            "column": "id",
+            "value": "={{ $json.ticket_id }}"
+          }
+        ]
+      },
+      "id": "22i97f8a-7b1b-4b2b-9c3d-1234567890cd",
+      "name": "Fetch Ticket Details",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [560, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "select": "supabaseCredential",
+        "operation": "update",
+        "tableId": "support_tickets",
+        "filterType": "manual",
+        "matchingColumns": [
+          {
+            "column": "id",
+            "value": "={{ $json.ticket_id }}"
+          }
+        ],
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "={{ $json.new_status || $node[\"Fetch Ticket Details\"].json.data[0].status }}"
+            },
+            {
+              "fieldId": "priority",
+              "fieldValue": "={{ $json.new_priority || $node[\"Fetch Ticket Details\"].json.data[0].priority }}"
+            },
+            {
+              "fieldId": "resolution_details",
+              "fieldValue": "={{ $json.resolution_details || $node[\"Fetch Ticket Details\"].json.data[0].resolution_details }}"
+            },
+            {
+              "fieldId": "assigned_to_user_id",
+              "fieldValue": "={{ $json.assigned_to_user_id || $node[\"Fetch Ticket Details\"].json.data[0].assigned_to_user_id }}"
+            },
+            {
+              "fieldId": "closed_at",
+              "fieldValue": "={{ ($json.new_status === 'resolved' || $json.new_status === 'closed') ? new Date().toISOString() : $node[\"Fetch Ticket Details\"].json.data[0].closed_at }}"
+            },
+            {
+              "fieldId": "updated_at",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            }
+          ]
+        }
+      },
+      "id": "33i97f8a-7b1b-4b2b-9c3d-1234567890ef",
+      "name": "Update Support Ticket",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [780, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.new_status === 'resolved' || $json.new_status === 'closed' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean"
+              }
+            }
+          ]
+        },
+        "combineOperation": "any"
+      },
+      "id": "44i97f8a-7b1b-4b2b-9c3d-1234567890gh",
+      "name": "Notify Reporter?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1000, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ '[MCP-SUB] A13-SendCommunication' }}",
+        "waitForSubWorkflow": true,
+        "inputData": "={\"organization_id\": \"{{ $node[\\\"Fetch Ticket Details\\\"].json.data[0].organization_id }}\", \"sender_user_id\": \"{{ $json.updater_user_id }}\", \"communication_type\": \"notification\", \"subject\": \"Actualización de tu Ticket de Soporte #{{ $json.ticket_id }}\", \"content\": \"Tu ticket de soporte ha sido actualizado a '{{ $json.new_status }}'. Detalles de resolución: {{ $json.resolution_details }}\", \"confidentiality_level\": \"restricted\", \"recipient_user_ids\": [\"{{ $node[\\\"Fetch Ticket Details\\\"].json.data[0].reporter_user_id }}\"]}"
+      },
+      "id": "55i97f8a-7b1b-4b2b-9c3d-1234567890ij",
+      "name": "Notify Reporter",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1220, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log the ticket update event\nconst ticketId = $json.ticket_id;\nconst newStatus = $json.new_status;\nconst updaterUserId = $json.updater_user_id;\nconst taskId = $json.task_id;\n\nconst logEventData = {\n  log_level: 'INFO',\n  log_message: `Ticket de soporte (ID: ${ticketId}) actualizado a ${newStatus} por ${updaterUserId}`,\n  task_id: taskId,\n  agent_id: 'A02',\n  details: { \n    ticket_id: ticketId,\n    new_status: newStatus,\n    updater_user_id: updaterUserId,\n    resolution_details: $json.resolution_details\n  }\n};\n\nreturn {\n  json: {\n    success: true,\n    ticket_id: ticketId,\n    log_event_data: logEventData\n  }\n};"
+      },
+      "id": "66i97f8a-7b1b-4b2b-9c3d-1234567890kl",
+      "name": "Log Event (Ticket Updated)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1440, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "select": "supabaseCredential",
+        "operation": "callFunction",
+        "functionName": "log_event",
+        "functionArgs": "={{ $json.log_event_data }}"
+      },
+      "id": "77i97f8a-7b1b-4b2b-9c3d-1234567890mn",
+      "name": "Call Log Event Function",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1660, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ '[CORE] Handle-Error-and-Retry' }}",
+        "waitForSubWorkflow": true,
+        "inputData": "={\"taskId\": \"{{ $json.task_id }}\", \"error_message\": \"{{ $error.message }}\", \"workflow_to_retry_id\": \"{{ $workflow.id }}\", \"workflow_params\": \"{{ $json }}\", \"agent_id\": \"A02\"}"
+      },
+      "id": "88i97f8a-7b1b-4b2b-9c3d-1234567890op",
+      "name": "Handle Error and Retry",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1220, 500]
+    },
+    {
+      "parameters": {},
+      "id": "99i97f8a-7b1b-4b2b-9c3d-1234567890qr",
+      "name": "End Success",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1880, 300]
+    },
+    {
+      "parameters": {},
+      "id": "10j97f8a-7b1b-4b2b-9c3d-1234567890st",
+      "name": "End Error",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1440, 500]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Fetch Ticket Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Ticket Details": {
+      "main": [
+        [
+          {
+            "node": "Update Support Ticket",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Support Ticket": {
+      "main": [
+        [
+          {
+            "node": "Notify Reporter?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Reporter?": {
+      "main": [
+        [
+          {
+            "node": "Notify Reporter",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Event (Ticket Updated)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Reporter": {
+      "main": [
+        [
+          {
+            "node": "Log Event (Ticket Updated)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Event (Ticket Updated)": {
+      "main": [
+        [
+          {
+            "node": "Call Log Event Function",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Log Event Function": {
+      "main": [
+        [
+          {
+            "node": "End Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Error and Retry": {
+      "main": [
+        [
+          {
+            "node": "End Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "mcp-sub-a02-updatesupportticket",
+  "tags": [
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "eprm-agents",
+      "name": "EPRM Agents"
+    },
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "agent-02",
+      "name": "Agent 02"
+    },
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "mcp-sub",
+      "name": "MCP Sub"
+    }
+  ]
+}

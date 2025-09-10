@@ -1,0 +1,364 @@
+{
+  "name": "[TEST] A01-Task-Orchestrator-Test",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "test-orchestrator",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-test-start",
+      "name": "Webhook - Start Test",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ],
+      "webhookId": "test-orchestrator-webhook"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate test parameters for A01-Master-Task-Orchestrator\nconst testData = {\n  // Test case from webhook body or use defaults\n  testCase: $json.body?.testCase || 'default',\n  specificTaskType: $json.body?.taskType || null,\n  specificParameters: $json.body?.parameters || null\n};\n\n// Generate valid UUIDs for testing\nfunction generateUUID() {\n  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {\n    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);\n    return v.toString(16);\n  });\n}\n\n// Base test parameters\nconst baseParams = {\n  organization_id: generateUUID(),\n  creator_user_id: generateUUID(),\n  project_id: generateUUID(),\n  priority: 1\n};\n\n// Define different test cases\nconst testCases = {\n  'default': {\n    task_type: 'data_analysis',\n    parameters: {\n      dataset_id: generateUUID(),\n      analysis_type: 'statistical_summary',\n      output_format: 'json'\n    }\n  },\n  'document_processing': {\n    task_type: 'document_processing',\n    parameters: {\n      document_id: generateUUID(),\n      processing_type: 'text_extraction',\n      language: 'es',\n      output_format: 'markdown'\n    }\n  },\n  'api_integration': {\n    task_type: 'api_integration',\n    parameters: {\n      endpoint_url: 'https://api.example.com/data',\n      method: 'GET',\n      headers: {\n        'Content-Type': 'application/json'\n      },\n      timeout: 30000\n    }\n  },\n  'workflow_automation': {\n    task_type: 'workflow_automation',\n    parameters: {\n      workflow_template_id: generateUUID(),\n      trigger_conditions: {\n        'event_type': 'user_signup',\n        'filters': {\n          'role': 'premium'\n        }\n      },\n      actions: [\n        {\n          'type': 'email_notification',\n          'template': 'welcome_premium'\n        }\n      ]\n    }\n  },\n  'role_management': {\n    task_type: 'role_management',\n    parameters: {\n      action: 'assign_role',\n      user_id: generateUUID(),\n      role_id: generateUUID(),\n      organization_id: baseParams.organization_id,\n      effective_date: new Date().toISOString()\n    }\n  },\n  'user_creation': {\n    task_type: 'user_creation',\n    parameters: {\n      email: 'test.user@example.com',\n      first_name: 'Test',\n      last_name: 'User',\n      role_id: generateUUID(),\n      organization_id: baseParams.organization_id,\n      send_welcome_email: true\n    }\n  },\n  'organization_setup': {\n    task_type: 'organization_setup',\n    parameters: {\n      name: 'Test Organization',\n      description: 'Organization created for testing purposes',\n      settings: {\n        'enable_notifications': true,\n        'default_language': 'es',\n        'timezone': 'America/Mexico_City'\n      }\n    }\n  },\n  'report_generation': {\n    task_type: 'report_generation',\n    parameters: {\n      report_type: 'user_assignment_report',\n      organization_id: baseParams.organization_id,\n      date_range: {\n        'start_date': '2024-01-01',\n        'end_date': '2024-12-31'\n      },\n      format: 'pdf',\n      include_charts: true\n    }\n  }\n};\n\n// Select test case\nlet selectedTest = testCases[testData.testCase] || testCases['default'];\n\n// Override with specific parameters if provided\nif (testData.specificTaskType) {\n  selectedTest.task_type = testData.specificTaskType;\n}\n\nif (testData.specificParameters) {\n  selectedTest.parameters = { ...selectedTest.parameters, ...testData.specificParameters };\n}\n\n// Combine base parameters with test case\nconst finalPayload = {\n  ...baseParams,\n  ...selectedTest,\n  test_case_name: testData.testCase,\n  test_timestamp: new Date().toISOString()\n};\n\nconsole.log(`Preparing test case: ${testData.testCase}`);\nconsole.log('Payload:', JSON.stringify(finalPayload, null, 2));\n\nreturn finalPayload;"
+      },
+      "id": "generate-test-params",
+      "name": "Generate Test Parameters",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=http://localhost:5678/webhook/task-orchestrator",
+        "authentication": "none",
+        "requestMethod": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Test-Case",
+              "value": "={{ $json.test_case_name }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 30000,
+          "retry": {
+            "enabled": true,
+            "maxTries": 3
+          }
+        }
+      },
+      "id": "call-orchestrator",
+      "name": "Call A01-Master-Task-Orchestrator",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "success-check",
+              "leftValue": "={{ $json.success }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-response",
+      "name": "Check Response Success",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Process successful response from A01-Master-Task-Orchestrator\nconst response = $json;\nconst originalRequest = $('Generate Test Parameters').item.json;\n\nconst result = {\n  test_status: 'SUCCESS',\n  test_case: originalRequest.test_case_name,\n  test_timestamp: originalRequest.test_timestamp,\n  request_payload: {\n    organization_id: originalRequest.organization_id,\n    creator_user_id: originalRequest.creator_user_id,\n    task_type: originalRequest.task_type,\n    parameters: originalRequest.parameters,\n    priority: originalRequest.priority,\n    project_id: originalRequest.project_id\n  },\n  orchestrator_response: {\n    success: response.success,\n    task_id: response.task_id,\n    assigned_agent_id: response.assigned_agent_id,\n    status: response.status,\n    execution_time_ms: response.execution_time_ms,\n    timestamp: response.timestamp\n  },\n  test_duration_ms: Date.now() - Date.parse(originalRequest.test_timestamp),\n  validation: {\n    has_task_id: !!response.task_id,\n    has_assigned_agent: !!response.assigned_agent_id,\n    status_is_completed: response.status === 'completed_success',\n    execution_time_reasonable: response.execution_time_ms < 60000 // Less than 1 minute\n  }\n};\n\n// Add validation summary\nconst validationPassed = Object.values(result.validation).every(v => v === true);\nresult.validation.overall_passed = validationPassed;\n\nconsole.log(`Test ${result.test_case} completed successfully`);\nconsole.log(`Task ID: ${response.task_id}`);\nconsole.log(`Assigned Agent: ${response.assigned_agent_id}`);\nconsole.log(`Execution Time: ${response.execution_time_ms}ms`);\nconsole.log(`Validation Passed: ${validationPassed}`);\n\nreturn result;"
+      },
+      "id": "process-success",
+      "name": "Process Success Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Process error response from A01-Master-Task-Orchestrator\nconst response = $json;\nconst originalRequest = $('Generate Test Parameters').item.json;\n\n// Extract error information\nlet errorDetails = {};\nif (response.error) {\n  errorDetails = {\n    error: response.error,\n    errorType: response.errorType || 'unknown',\n    shouldRetry: response.shouldRetry || false,\n    retryDelay: response.retryDelay || 0\n  };\n} else {\n  // Handle HTTP errors or unexpected responses\n  errorDetails = {\n    error: 'Unexpected response format or HTTP error',\n    errorType: 'http_error',\n    shouldRetry: false,\n    retryDelay: 0,\n    http_status: response.statusCode || 'unknown',\n    raw_response: JSON.stringify(response)\n  };\n}\n\nconst result = {\n  test_status: 'ERROR',\n  test_case: originalRequest.test_case_name,\n  test_timestamp: originalRequest.test_timestamp,\n  request_payload: {\n    organization_id: originalRequest.organization_id,\n    creator_user_id: originalRequest.creator_user_id,\n    task_type: originalRequest.task_type,\n    parameters: originalRequest.parameters,\n    priority: originalRequest.priority,\n    project_id: originalRequest.project_id\n  },\n  error_details: errorDetails,\n  test_duration_ms: Date.now() - Date.parse(originalRequest.test_timestamp),\n  troubleshooting: {\n    check_orchestrator_running: 'Verify A01-Master-Task-Orchestrator is active',\n    check_webhook_url: 'Confirm webhook URL is correct',\n    check_parameters: 'Validate all required parameters are present',\n    check_uuid_format: 'Ensure UUIDs are properly formatted',\n    check_supabase_connection: 'Verify Supabase credentials and connection'\n  }\n};\n\nconsole.error(`Test ${result.test_case} failed`);\nconsole.error(`Error: ${errorDetails.error}`);\nconsole.error(`Error Type: ${errorDetails.errorType}`);\nif (errorDetails.shouldRetry) {\n  console.log(`Retry recommended after ${errorDetails.retryDelay}ms`);\n}\n\nreturn result;"
+      },
+      "id": "process-error",
+      "name": "Process Error Response", 
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "table",
+        "table": "test_execution_logs",
+        "operation": "insert",
+        "dataToInsert": "defineInNode",
+        "columnsToMatchOn": [],
+        "valuesToSend": {
+          "test_name": "[TEST] A01-Task-Orchestrator-Test",
+          "test_case": "={{ $json.test_case }}",
+          "status": "={{ $json.test_status }}",
+          "task_type": "={{ $json.request_payload.task_type }}",
+          "organization_id": "={{ $json.request_payload.organization_id }}",
+          "task_id": "={{ $json.orchestrator_response?.task_id || null }}",
+          "assigned_agent_id": "={{ $json.orchestrator_response?.assigned_agent_id || null }}",
+          "execution_time_ms": "={{ $json.test_duration_ms }}",
+          "validation_passed": "={{ $json.validation?.overall_passed || false }}",
+          "error_message": "={{ $json.error_details?.error || null }}",
+          "error_type": "={{ $json.error_details?.errorType || null }}",
+          "request_payload": "={{ JSON.stringify($json.request_payload) }}",
+          "response_data": "={{ JSON.stringify($json.orchestrator_response || $json.error_details) }}",
+          "created_at": "={{ new Date().toISOString() }}"
+        },
+        "options": {
+          "queryName": "insert_test_log"
+        }
+      },
+      "id": "log-success-test",
+      "name": "Log Success Test Result",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1340,
+        220
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-account",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "table",
+        "table": "test_execution_logs",
+        "operation": "insert",
+        "dataToInsert": "defineInNode",
+        "columnsToMatchOn": [],
+        "valuesToSend": {
+          "test_name": "[TEST] A01-Task-Orchestrator-Test",
+          "test_case": "={{ $json.test_case }}",
+          "status": "={{ $json.test_status }}",
+          "task_type": "={{ $json.request_payload.task_type }}",
+          "organization_id": "={{ $json.request_payload.organization_id }}",
+          "task_id": null,
+          "assigned_agent_id": null,
+          "execution_time_ms": "={{ $json.test_duration_ms }}",
+          "validation_passed": false,
+          "error_message": "={{ $json.error_details.error }}",
+          "error_type": "={{ $json.error_details.errorType }}",
+          "request_payload": "={{ JSON.stringify($json.request_payload) }}",
+          "response_data": "={{ JSON.stringify($json.error_details) }}",
+          "created_at": "={{ new Date().toISOString() }}"
+        },
+        "options": {
+          "queryName": "insert_error_test_log"
+        }
+      },
+      "id": "log-error-test",
+      "name": "Log Error Test Result",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1340,
+        400
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-account",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json, null, 2) }}"
+      },
+      "id": "success-response",
+      "name": "Success Test Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1560,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json, null, 2) }}",
+        "options": {
+          "responseCode": 500
+        }
+      },
+      "id": "error-response",
+      "name": "Error Test Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1560,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook - Start Test": {
+      "main": [
+        [
+          {
+            "node": "Generate Test Parameters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Test Parameters": {
+      "main": [
+        [
+          {
+            "node": "Call A01-Master-Task-Orchestrator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call A01-Master-Task-Orchestrator": {
+      "main": [
+        [
+          {
+            "node": "Check Response Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Response Success": {
+      "main": [
+        [
+          {
+            "node": "Process Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Process Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Success Response": {
+      "main": [
+        [
+          {
+            "node": "Log Success Test Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Error Response": {
+      "main": [
+        [
+          {
+            "node": "Log Error Test Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Success Test Result": {
+      "main": [
+        [
+          {
+            "node": "Success Test Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Error Test Result": {
+      "main": [
+        [
+          {
+            "node": "Error Test Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "id": "testing",
+      "name": "Testing"
+    },
+    {
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "id": "orchestration",
+      "name": "Orchestration"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}

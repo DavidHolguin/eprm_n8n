@@ -1,0 +1,268 @@
+{
+  "name": "[MCP-SUB] A03-AssignRoleToUser",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "ef8b4d82-1234-4567-8901-300000000001",
+      "name": "Execute Sub-workflow Trigger",
+      "type": "@n8n/n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [20, 380]
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": "roles",
+        "options": {
+          "queryName": "name",
+          "queryValue": "={{$json.new_role_name}}"
+        }
+      },
+      "id": "ef8b4d82-1234-4567-8901-300000000002",
+      "name": "Supabase: Fetch Role ID",
+      "type": "@n8n/n8n-nodes-supabase.supabase",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-credentials",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "table": "users",
+        "options": {
+          "queryName": "id",
+          "queryValue": "={{$json.user_id}}",
+          "additionalFields": {
+            "columns": "id,email,full_name,organization_id"
+          }
+        }
+      },
+      "id": "ef8b4d82-1234-4567-8901-300000000003",
+      "name": "Supabase: Fetch User Details",
+      "type": "@n8n/n8n-nodes-supabase.supabase",
+      "typeVersion": 1,
+      "position": [240, 460],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-credentials",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate role assignment and get user details\nconst roleData = $node[\"Supabase: Fetch Role ID\"].json.data;\nconst userData = $node[\"Supabase: Fetch User Details\"].json.data;\nconst organizationId = $input.all()[0].json.organization_id;\nconst newRoleName = $input.all()[0].json.new_role_name;\nconst userId = $input.all()[0].json.user_id;\n\n// Validate role exists\nif (!roleData || roleData.length === 0) {\n  throw new Error(`New role '${newRoleName}' not found or invalid.`);\n}\n\n// Validate user exists and belongs to organization\nif (!userData || userData.length === 0) {\n  throw new Error(`User not found or does not belong to organization.`);\n}\n\nconst user = userData[0];\nif (user.organization_id !== organizationId) {\n  throw new Error(`User does not belong to the specified organization.`);\n}\n\nconst newRole = roleData[0];\n\n// Here we could add hierarchy validation logic\n// For example, check if assigner_user_id has permission to assign this role\n// This would require fetching the assigner's role and comparing hierarchy levels\n\nreturn [{\n  json: {\n    new_role_id: newRole.id,\n    user_email: user.email,\n    user_full_name: user.full_name,\n    user_id: userId,\n    organization_id: organizationId,\n    new_role_name: newRoleName,\n    validation_passed: true\n  }\n}];"
+      },
+      "id": "ef8b4d82-1234-4567-8901-300000000004",
+      "name": "Code: Validate Role Assignment & Get User Email",
+      "type": "@n8n/n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 380]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": "users",
+        "updateKey": "id",
+        "fieldsToUpdate": {
+          "role_id": "={{$json.new_role_id}}",
+          "updated_at": "={{new Date().toISOString()}}",
+          "role_assigned_at": "={{new Date().toISOString()}}"
+        },
+        "options": {
+          "queryName": "id",
+          "queryValue": "={{$json.user_id}}"
+        },
+        "additionalFields": {
+          "whereCondition": "organization_id = '{{$json.organization_id}}'"
+        }
+      },
+      "id": "ef8b4d82-1234-4567-8901-300000000005",
+      "name": "Supabase: Update User Role",
+      "type": "@n8n/n8n-nodes-supabase.supabase",
+      "typeVersion": 1,
+      "position": [680, 380],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-credentials",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowId": "[MCP-SUB] A13-SendCommunication",
+        "options": {
+          "inputData": {
+            "organization_id": "={{$json.organization_id}}",
+            "sender_user_id": "={{$input.all()[0].json.assigner_user_id}}",
+            "communication_type": "notification",
+            "subject": "Nuevo Rol Asignado en EPRM SUITE",
+            "content": "Estimado/a {{$json.user_full_name}},\\n\\nSe te ha asignado el rol de '{{$json.new_role_name}}' en la plataforma EPRM SUITE. Por favor, revisa tus nuevos permisos y responsabilidades.\\n\\nSaludos,\\nEquipo EPRM",
+            "confidentiality_level": "restricted",
+            "recipient_user_ids": ["{{$json.user_id}}"]
+          }
+        }
+      },
+      "id": "ef8b4d82-1234-4567-8901-300000000006",
+      "name": "Execute Workflow: [MCP-SUB] A13-SendCommunication (Role Assignment)",
+      "type": "@n8n/n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [900, 380]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log role assignment event\nconst userId = $input.all()[0].json.user_id;\nconst newRoleName = $input.all()[0].json.new_role_name;\nconst assignerUserId = $input.all()[0].json.assigner_user_id || 'SYSTEM';\nconst taskId = $input.all()[0].json.task_id;\nconst communicationId = $node[\"Execute Workflow: [MCP-SUB] A13-SendCommunication (Role Assignment)\"].json.communication_id || 'N/A';\n\n// Prepare log event parameters\nconst logParams = {\n  log_level: 'INFO',\n  log_message: `Rol '${newRoleName}' asignado a usuario (ID: ${userId}) por ${assignerUserId}. Notificación ID: ${communicationId}`,\n  task_id: taskId,\n  agent_id: 'A03',\n  details: { \n    user_id: userId,\n    new_role: newRoleName,\n    assigner_user_id: assignerUserId,\n    notification_id: communicationId\n  }\n};\n\nreturn [{\n  json: {\n    success: true,\n    user_id: userId,\n    notification_id: communicationId,\n    log_params: logParams\n  }\n}];"
+      },
+      "id": "ef8b4d82-1234-4567-8901-300000000007",
+      "name": "Code: Log Event (Role Assigned)",
+      "type": "@n8n/n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 380]
+    },
+    {
+      "parameters": {
+        "operation": "callFunction",
+        "function": "public.log_event",
+        "arguments": "={{$json.log_params}}"
+      },
+      "id": "ef8b4d82-1234-4567-8901-300000000008",
+      "name": "Supabase: Call Log Event",
+      "type": "@n8n/n8n-nodes-supabase.supabase",
+      "typeVersion": 1,
+      "position": [1340, 380],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-credentials",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Return final output\nreturn [{\n  json: {\n    success: $input.all()[0].json.success,\n    user_id: $input.all()[0].json.user_id,\n    notification_id: $input.all()[0].json.notification_id\n  }\n}];"
+      },
+      "id": "ef8b4d82-1234-4567-8901-300000000009",
+      "name": "Code: Prepare Final Output",
+      "type": "@n8n/n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 380]
+    }
+  ],
+  "connections": {
+    "Execute Sub-workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Supabase: Fetch Role ID",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Supabase: Fetch User Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase: Fetch Role ID": {
+      "main": [
+        [
+          {
+            "node": "Code: Validate Role Assignment & Get User Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase: Fetch User Details": {
+      "main": [
+        [
+          {
+            "node": "Code: Validate Role Assignment & Get User Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code: Validate Role Assignment & Get User Email": {
+      "main": [
+        [
+          {
+            "node": "Supabase: Update User Role",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase: Update User Role": {
+      "main": [
+        [
+          {
+            "node": "Execute Workflow: [MCP-SUB] A13-SendCommunication (Role Assignment)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Workflow: [MCP-SUB] A13-SendCommunication (Role Assignment)": {
+      "main": [
+        [
+          {
+            "node": "Code: Log Event (Role Assigned)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code: Log Event (Role Assigned)": {
+      "main": [
+        [
+          {
+            "node": "Supabase: Call Log Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase: Call Log Event": {
+      "main": [
+        [
+          {
+            "node": "Code: Prepare Final Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "id": "agent-03-sub",
+      "name": "Agent-03-Subworkflows"
+    }
+  ],
+  "triggerCount": 0,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}

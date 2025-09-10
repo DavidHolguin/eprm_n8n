@@ -1,0 +1,210 @@
+{
+  "name": "[MCP-SUB] A02-LogPlatformUsage",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "11e97f8a-7b1b-4b2b-9c3d-1234567890ab",
+      "name": "Start",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        340,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "select": "supabaseCredential",
+        "operation": "insert",
+        "tableId": "platform_usage_logs",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "user_id",
+              "fieldValue": "={{ $json.user_id }}"
+            },
+            {
+              "fieldId": "organization_id",
+              "fieldValue": "={{ $json.organization_id }}"
+            },
+            {
+              "fieldId": "feature_used",
+              "fieldValue": "={{ $json.feature_used }}"
+            },
+            {
+              "fieldId": "duration_seconds",
+              "fieldValue": "={{ $json.duration_seconds }}"
+            },
+            {
+              "fieldId": "log_payload",
+              "fieldValue": "={{ $json.log_payload }}"
+            }
+          ]
+        }
+      },
+      "id": "22e97f8a-7b1b-4b2b-9c3d-1234567890cd",
+      "name": "Insert Usage Log",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        560,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log the platform usage event\nconst logEntryId = $node[\"Insert Usage Log\"].json.id;\nconst userId = $json.user_id;\nconst featureUsed = $json.feature_used;\nconst taskId = $json.task_id || null;\n\n// Call log_event function - using DEBUG level for high volume logs\nconst logEventData = {\n  log_level: 'DEBUG',\n  log_message: `Uso registrado para usuario ${userId} en característica ${featureUsed}`,\n  task_id: taskId,\n  agent_id: 'A02',\n  details: { \n    log_entry_id: logEntryId,\n    feature: featureUsed,\n    duration_seconds: $json.duration_seconds || 0\n  }\n};\n\nreturn {\n  json: {\n    log_entry_id: logEntryId,\n    log_event_data: logEventData\n  }\n};"
+      },
+      "id": "33e97f8a-7b1b-4b2b-9c3d-1234567890ef",
+      "name": "Log Event (Platform Usage)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "select": "supabaseCredential",
+        "operation": "callFunction",
+        "functionName": "log_event",
+        "functionArgs": "={{ $json.log_event_data }}"
+      },
+      "id": "44e97f8a-7b1b-4b2b-9c3d-1234567890gh",
+      "name": "Call Log Event Function",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ '[CORE] Handle-Error-and-Retry' }}",
+        "waitForSubWorkflow": true,
+        "inputData": "={\"taskId\": \"{{ $json.task_id }}\", \"error_message\": \"{{ $error.message }}\", \"workflow_to_retry_id\": \"{{ $workflow.id }}\", \"workflow_params\": \"{{ $json }}\", \"agent_id\": \"A02\"}"
+      },
+      "id": "55e97f8a-7b1b-4b2b-9c3d-1234567890ij",
+      "name": "Handle Error and Retry",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        780,
+        500
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "66e97f8a-7b1b-4b2b-9c3d-1234567890kl",
+      "name": "End Success",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1220,
+        300
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "77e97f8a-7b1b-4b2b-9c3d-1234567890mn",
+      "name": "End Error",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        500
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Insert Usage Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Usage Log": {
+      "main": [
+        [
+          {
+            "node": "Log Event (Platform Usage)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Event (Platform Usage)": {
+      "main": [
+        [
+          {
+            "node": "Call Log Event Function",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Log Event Function": {
+      "main": [
+        [
+          {
+            "node": "End Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Error and Retry": {
+      "main": [
+        [
+          {
+            "node": "End Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "mcp-sub-a02-logplatformusage",
+  "tags": [
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "eprm-agents",
+      "name": "EPRM Agents"
+    },
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "agent-02",
+      "name": "Agent 02"
+    },
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "mcp-sub",
+      "name": "MCP Sub"
+    }
+  ]
+}

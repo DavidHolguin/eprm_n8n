@@ -1,0 +1,814 @@
+{
+  "name": "[A02] Account-Management-Orchestrator",
+  "nodes": [
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "select": "supabaseCredential",
+        "operation": "callFunction",
+        "functionName": "claim_next_task",
+        "functionArgs": "={\"agent_id\": \"A02\"}"
+      },
+      "id": "db8b7f8a-7b1b-4b2b-9c3d-1234567890ab",
+      "name": "Claim Next Task",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        560,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.data && $json.data.length > 0 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean"
+              }
+            }
+          ]
+        },
+        "combineOperation": "any"
+      },
+      "id": "ff8b7f8a-7b1b-4b2b-9c3d-1234567890cd",
+      "name": "Task Claimed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        780,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract task data from the claimed task\nconst taskData = $json.data[0]; // claim_next_task returns array with one task\n\nreturn {\n  json: {\n    taskId: taskData.id,\n    taskType: taskData.task_type,\n    parameters: taskData.parameters,\n    organizationId: taskData.organization_id,\n    creatorUserId: taskData.creator_user_id,\n    assignedAgentId: taskData.assigned_agent_id,\n    priority: taskData.priority,\n    createdAt: taskData.created_at\n  }\n};"
+      },
+      "id": "aa8b7f8a-7b1b-4b2b-9c3d-1234567890ef",
+      "name": "Parse Task Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.taskType }}",
+                    "rightValue": "create_lead",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "createLead"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.taskType }}",
+                    "rightValue": "update_lead_status",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "updateLeadStatus"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.taskType }}",
+                    "rightValue": "register_subscription",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "registerSubscription"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.taskType }}",
+                    "rightValue": "log_platform_usage",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "logPlatformUsage"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.taskType }}",
+                    "rightValue": "generate_usage_report",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "generateUsageReport"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.taskType }}",
+                    "rightValue": "send_usage_report",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "sendUsageReport"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.taskType }}",
+                    "rightValue": "create_support_ticket",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "createSupportTicket"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.taskType }}",
+                    "rightValue": "update_support_ticket",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "updateSupportTicket"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.taskType }}",
+                    "rightValue": "escalate_complaint",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "escalateComplaint"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.taskType }}",
+                    "rightValue": "provide_metrics_data",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "provideMetricsData"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "bb8b7f8a-7b1b-4b2b-9c3d-1234567890gh",
+      "name": "Route Task Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        1220,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ '[MCP-SUB] A02-CreateLead' }}",
+        "waitForSubWorkflow": true
+      },
+      "id": "cc8b7f8a-7b1b-4b2b-9c3d-1234567890ij",
+      "name": "Execute CreateLead",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        1460,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ '[MCP-SUB] A02-UpdateLeadStatus' }}",
+        "waitForSubWorkflow": true
+      },
+      "id": "dd8b7f8a-7b1b-4b2b-9c3d-1234567890kl",
+      "name": "Execute UpdateLeadStatus",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        1460,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ '[MCP-SUB] A02-RegisterSubscription' }}",
+        "waitForSubWorkflow": true
+      },
+      "id": "ee8b7f8a-7b1b-4b2b-9c3d-1234567890mn",
+      "name": "Execute RegisterSubscription",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        1460,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ '[MCP-SUB] A02-LogPlatformUsage' }}",
+        "waitForSubWorkflow": true
+      },
+      "id": "11a97f8a-7b1b-4b2b-9c3d-1234567890op",
+      "name": "Execute LogPlatformUsage",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        1460,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ '[MCP-SUB] A02-GenerateUsageReport' }}",
+        "waitForSubWorkflow": true
+      },
+      "id": "22a97f8a-7b1b-4b2b-9c3d-1234567890qr",
+      "name": "Execute GenerateUsageReport",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        1460,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ '[MCP-SUB] A02-SendUsageReport' }}",
+        "waitForSubWorkflow": true
+      },
+      "id": "33a97f8a-7b1b-4b2b-9c3d-1234567890st",
+      "name": "Execute SendUsageReport",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        1460,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ '[MCP-SUB] A02-CreateSupportTicket' }}",
+        "waitForSubWorkflow": true
+      },
+      "id": "44a97f8a-7b1b-4b2b-9c3d-1234567890uv",
+      "name": "Execute CreateSupportTicket",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        1460,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ '[MCP-SUB] A02-UpdateSupportTicket' }}",
+        "waitForSubWorkflow": true
+      },
+      "id": "55a97f8a-7b1b-4b2b-9c3d-1234567890wx",
+      "name": "Execute UpdateSupportTicket",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        1460,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ '[MCP-SUB] A02-EscalateComplaint' }}",
+        "waitForSubWorkflow": true
+      },
+      "id": "66a97f8a-7b1b-4b2b-9c3d-1234567890yz",
+      "name": "Execute EscalateComplaint",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        1460,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ '[MCP-SUB] A02-ProvideMetricsData' }}",
+        "waitForSubWorkflow": true
+      },
+      "id": "77a97f8a-7b1b-4b2b-9c3d-12345678901a",
+      "name": "Execute ProvideMetricsData",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        1460,
+        620
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "select": "supabaseCredential",
+        "operation": "update",
+        "tableId": "tasks",
+        "filterType": "manual",
+        "matchingColumns": [
+          {
+            "column": "id",
+            "value": "={{ $json.taskId }}"
+          }
+        ],
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "completed_success"
+            },
+            {
+              "fieldId": "updated_at",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            }
+          ]
+        }
+      },
+      "id": "88a97f8a-7b1b-4b2b-9c3d-12345678902b",
+      "name": "Update Task Status (Success)",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ '[CORE] Handle-Error-and-Retry' }}",
+        "waitForSubWorkflow": true,
+        "inputData": "={\"taskId\": \"{{ $json.taskId }}\", \"error_message\": \"{{ $error.message }}\", \"workflow_to_retry_id\": \"{{ $workflow.id }}\", \"workflow_params\": \"{{ $json.parameters }}\", \"agent_id\": \"A02\"}"
+      },
+      "id": "99a97f8a-7b1b-4b2b-9c3d-12345678903c",
+      "name": "Handle Error and Retry",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        1700,
+        500
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "00a97f8a-7b1b-4b2b-9c3d-12345678904d",
+      "name": "End (No Task)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "channel": "task_updates",
+        "additionalFields": {}
+      },
+      "id": "10a97f8a-7b1b-4b2b-9c3d-12345678905e",
+      "name": "Supabase Task Updates Trigger",
+      "type": "n8n-nodes-base.supabaseTrigger",
+      "typeVersion": 1,
+      "position": [
+        340,
+        300
+      ],
+      "webhookId": "task-updates-a02-trigger"
+    },
+    {
+      "parameters": {},
+      "id": "20a97f8a-7b1b-4b2b-9c3d-12345678906f",
+      "name": "End (Success)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1920,
+        300
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "30a97f8a-7b1b-4b2b-9c3d-12345678907g",
+      "name": "End (Error)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1920,
+        500
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Supabase Task Updates Trigger": {
+      "main": [
+        [
+          {
+            "node": "Claim Next Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim Next Task": {
+      "main": [
+        [
+          {
+            "node": "Task Claimed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Task Claimed?": {
+      "main": [
+        [
+          {
+            "node": "Parse Task Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "End (No Task)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Task Data": {
+      "main": [
+        [
+          {
+            "node": "Route Task Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Task Type": {
+      "main": [
+        [
+          {
+            "node": "Execute CreateLead",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execute UpdateLeadStatus",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execute RegisterSubscription",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execute LogPlatformUsage",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execute GenerateUsageReport",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execute SendUsageReport",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execute CreateSupportTicket",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execute UpdateSupportTicket",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execute EscalateComplaint",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Execute ProvideMetricsData",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute CreateLead": {
+      "main": [
+        [
+          {
+            "node": "Update Task Status (Success)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute UpdateLeadStatus": {
+      "main": [
+        [
+          {
+            "node": "Update Task Status (Success)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute RegisterSubscription": {
+      "main": [
+        [
+          {
+            "node": "Update Task Status (Success)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute LogPlatformUsage": {
+      "main": [
+        [
+          {
+            "node": "Update Task Status (Success)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute GenerateUsageReport": {
+      "main": [
+        [
+          {
+            "node": "Update Task Status (Success)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute SendUsageReport": {
+      "main": [
+        [
+          {
+            "node": "Update Task Status (Success)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute CreateSupportTicket": {
+      "main": [
+        [
+          {
+            "node": "Update Task Status (Success)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute UpdateSupportTicket": {
+      "main": [
+        [
+          {
+            "node": "Update Task Status (Success)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute EscalateComplaint": {
+      "main": [
+        [
+          {
+            "node": "Update Task Status (Success)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute ProvideMetricsData": {
+      "main": [
+        [
+          {
+            "node": "Update Task Status (Success)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Task Status (Success)": {
+      "main": [
+        [
+          {
+            "node": "End (Success)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Error and Retry": {
+      "main": [
+        [
+          {
+            "node": "End (Error)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "a02-account-management-orchestrator",
+  "tags": [
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "eprm-agents",
+      "name": "EPRM Agents"
+    },
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "agent-02",
+      "name": "Agent 02"
+    }
+  ]
+}

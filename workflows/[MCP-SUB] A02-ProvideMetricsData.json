@@ -1,0 +1,463 @@
+{
+  "name": "[MCP-SUB] A02-ProvideMetricsData",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "11k97f8a-7b1b-4b2b-9c3d-1234567890ab",
+      "name": "Start",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [340, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.data_type }}",
+                    "rightValue": "subscriptions",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "subscriptions"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.data_type }}",
+                    "rightValue": "platform_usage",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "platformUsage"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.data_type }}",
+                    "rightValue": "support_tickets",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "supportTickets"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "22k97f8a-7b1b-4b2b-9c3d-1234567890cd",
+      "name": "Route Data Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [560, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "select": "supabaseCredential",
+        "operation": "select",
+        "tableId": "subscriptions",
+        "filterType": "manual",
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "organization_id",
+              "rightValue": "={{ $json.organization_id }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "leftValue": "created_at",
+              "rightValue": "={{ $json.time_period_start }}",
+              "operator": {
+                "type": "dateTime",
+                "operation": "afterOrEqual"
+              }
+            },
+            {
+              "leftValue": "created_at",
+              "rightValue": "={{ $json.time_period_end }}",
+              "operator": {
+                "type": "dateTime",
+                "operation": "beforeOrEqual"
+              }
+            }
+          ]
+        }
+      },
+      "id": "33k97f8a-7b1b-4b2b-9c3d-1234567890ef",
+      "name": "Fetch Subscriptions Data",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [780, 200]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "select": "supabaseCredential",
+        "operation": "select",
+        "tableId": "platform_usage_logs",
+        "filterType": "manual",
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "organization_id",
+              "rightValue": "={{ $json.organization_id }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "leftValue": "created_at",
+              "rightValue": "={{ $json.time_period_start }}",
+              "operator": {
+                "type": "dateTime",
+                "operation": "afterOrEqual"
+              }
+            },
+            {
+              "leftValue": "created_at",
+              "rightValue": "={{ $json.time_period_end }}",
+              "operator": {
+                "type": "dateTime",
+                "operation": "beforeOrEqual"
+              }
+            }
+          ]
+        }
+      },
+      "id": "44k97f8a-7b1b-4b2b-9c3d-1234567890gh",
+      "name": "Fetch Platform Usage Data",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [780, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "select": "supabaseCredential",
+        "operation": "select",
+        "tableId": "support_tickets",
+        "filterType": "manual",
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "organization_id",
+              "rightValue": "={{ $json.organization_id }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "leftValue": "created_at",
+              "rightValue": "={{ $json.time_period_start }}",
+              "operator": {
+                "type": "dateTime",
+                "operation": "afterOrEqual"
+              }
+            },
+            {
+              "leftValue": "created_at",
+              "rightValue": "={{ $json.time_period_end }}",
+              "operator": {
+                "type": "dateTime",
+                "operation": "beforeOrEqual"
+              }
+            }
+          ]
+        }
+      },
+      "id": "55k97f8a-7b1b-4b2b-9c3d-1234567890ij",
+      "name": "Fetch Support Tickets Data",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [780, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate data for A17 Metrics Assistant\nlet aggregatedData = {};\nconst dataType = $json.data_type;\nconst orgId = $json.organization_id;\nconst timePeriod = { start: $json.time_period_start, end: $json.time_period_end };\n\nif (dataType === 'subscriptions') {\n  const subscriptions = $json.data || [];\n  aggregatedData = {\n    active_subscriptions: subscriptions.filter(s => s.status !== 'cancelled').length,\n    new_subscriptions: subscriptions.filter(s => new Date(s.start_date) >= new Date(timePeriod.start)).length,\n    cancelled_subscriptions: subscriptions.filter(s => s.status === 'cancelled').length,\n    total_revenue_estimate: subscriptions.filter(s => s.status === 'active').length * 100, // Placeholder calculation\n    subscription_types: subscriptions.reduce((acc, sub) => {\n      acc[sub.subscription_type] = (acc[sub.subscription_type] || 0) + 1;\n      return acc;\n    }, {})\n  };\n} else if (dataType === 'platform_usage') {\n  const usageLogs = $json.data || [];\n  let totalDuration = 0;\n  const uniqueUsers = new Set();\n  const featureCounts = {};\n  \n  usageLogs.forEach(log => {\n    totalDuration += log.duration_seconds || 0;\n    uniqueUsers.add(log.user_id);\n    featureCounts[log.feature_used] = (featureCounts[log.feature_used] || 0) + 1;\n  });\n  \n  aggregatedData = {\n    total_platform_usage_hours: Math.round(totalDuration / 3600),\n    unique_users_active: uniqueUsers.size,\n    total_sessions: usageLogs.length,\n    top_features_used: Object.entries(featureCounts)\n      .sort(([,a], [,b]) => b - a)\n      .slice(0, 10)\n      .reduce((acc, [feature, count]) => {\n        acc[feature] = count;\n        return acc;\n      }, {}),\n    average_session_duration: usageLogs.length > 0 ? Math.round(totalDuration / usageLogs.length) : 0\n  };\n} else if (dataType === 'support_tickets') {\n  const tickets = $json.data || [];\n  aggregatedData = {\n    total_tickets: tickets.length,\n    open_tickets: tickets.filter(t => t.status === 'open' || t.status === 'in_progress').length,\n    resolved_tickets: tickets.filter(t => t.status === 'resolved' || t.status === 'closed').length,\n    escalated_tickets: tickets.filter(t => t.status === 'escalated').length,\n    complaints_count: tickets.filter(t => t.is_complaint === true).length,\n    average_resolution_time_hours: tickets\n      .filter(t => t.closed_at)\n      .reduce((sum, t) => sum + (new Date(t.closed_at) - new Date(t.created_at)) / (1000 * 60 * 60), 0) / \n      Math.max(tickets.filter(t => t.closed_at).length, 1),\n    priority_distribution: tickets.reduce((acc, ticket) => {\n      acc[ticket.priority] = (acc[ticket.priority] || 0) + 1;\n      return acc;\n    }, {})\n  };\n}\n\nreturn {\n  json: {\n    kpi_data_payload: aggregatedData,\n    organization_id: orgId,\n    data_type: dataType,\n    time_period: timePeriod\n  }\n};"
+      },
+      "id": "66k97f8a-7b1b-4b2b-9c3d-1234567890kl",
+      "name": "Aggregate Data for A17",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ '[MCP-SUB] A17-IngestKPIsData' }}",
+        "waitForSubWorkflow": true,
+        "inputData": "={{ $json }}"
+      },
+      "id": "77k97f8a-7b1b-4b2b-9c3d-1234567890mn",
+      "name": "Execute IngestKPIsData",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1220, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log the metrics data sending event\nconst organizationId = $json.organization_id;\nconst dataType = $json.data_type;\nconst taskId = $json.task_id;\n\nconst logEventData = {\n  log_level: 'INFO',\n  log_message: `Datos de métricas enviados al Agente 17 para ${organizationId} (Tipo: ${dataType})`,\n  task_id: taskId,\n  agent_id: 'A02',\n  details: { \n    organization_id: organizationId,\n    data_type: dataType,\n    time_period: $json.time_period\n  }\n};\n\nreturn {\n  json: {\n    success: true,\n    organization_id: organizationId,\n    data_type: dataType,\n    log_event_data: logEventData\n  }\n};"
+      },
+      "id": "88k97f8a-7b1b-4b2b-9c3d-1234567890op",
+      "name": "Log Event (Metrics Sent)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1440, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "select": "supabaseCredential",
+        "operation": "callFunction",
+        "functionName": "log_event",
+        "functionArgs": "={{ $json.log_event_data }}"
+      },
+      "id": "99k97f8a-7b1b-4b2b-9c3d-1234567890qr",
+      "name": "Call Log Event Function",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1660, 300]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ '[CORE] Handle-Error-and-Retry' }}",
+        "waitForSubWorkflow": true,
+        "inputData": "={\"taskId\": \"{{ $json.task_id }}\", \"error_message\": \"{{ $error.message }}\", \"workflow_to_retry_id\": \"{{ $workflow.id }}\", \"workflow_params\": \"{{ $json }}\", \"agent_id\": \"A02\"}"
+      },
+      "id": "10l97f8a-7b1b-4b2b-9c3d-1234567890st",
+      "name": "Handle Error and Retry",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1220, 500]
+    },
+    {
+      "parameters": {},
+      "id": "20l97f8a-7b1b-4b2b-9c3d-1234567890uv",
+      "name": "End Success",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1880, 300]
+    },
+    {
+      "parameters": {},
+      "id": "30l97f8a-7b1b-4b2b-9c3d-1234567890wx",
+      "name": "End Error",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1440, 500]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Route Data Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Data Type": {
+      "main": [
+        [
+          {
+            "node": "Fetch Subscriptions Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fetch Platform Usage Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fetch Support Tickets Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Subscriptions Data": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Data for A17",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Platform Usage Data": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Data for A17",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Support Tickets Data": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Data for A17",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Data for A17": {
+      "main": [
+        [
+          {
+            "node": "Execute IngestKPIsData",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute IngestKPIsData": {
+      "main": [
+        [
+          {
+            "node": "Log Event (Metrics Sent)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Event (Metrics Sent)": {
+      "main": [
+        [
+          {
+            "node": "Call Log Event Function",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Log Event Function": {
+      "main": [
+        [
+          {
+            "node": "End Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Error and Retry": {
+      "main": [
+        [
+          {
+            "node": "End Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "mcp-sub-a02-providemetricsdata",
+  "tags": [
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "eprm-agents",
+      "name": "EPRM Agents"
+    },
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "agent-02",
+      "name": "Agent 02"
+    },
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "mcp-sub",
+      "name": "MCP Sub"
+    }
+  ]
+}

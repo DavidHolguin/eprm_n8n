@@ -1,0 +1,134 @@
+{
+  "name": "[MCP-SUB] A03-CreateOrganization",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "ef8b4d82-1234-4567-8901-100000000001",
+      "name": "Execute Sub-workflow Trigger",
+      "type": "@n8n/n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [20, 240]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "organizations",
+        "fields": {
+          "name": "={{$json.organization_name}}",
+          "created_by_user_id": "={{$json.creator_user_id}}"
+        }
+      },
+      "id": "ef8b4d82-1234-4567-8901-100000000002",
+      "name": "Supabase: Insert Organization",
+      "type": "@n8n/n8n-nodes-supabase.supabase",
+      "typeVersion": 1,
+      "position": [240, 240],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-credentials",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log organization creation event\nconst organizationId = $input.all()[0].json.data[0].id;\nconst organizationName = $input.all()[0].json.organization_name;\nconst taskId = $input.all()[0].json.task_id;\n\n// Call log_event function\nconst logParams = {\n  log_level: 'INFO',\n  log_message: `Organización creada: ${organizationName} (ID: ${organizationId})`,\n  task_id: taskId,\n  agent_id: 'A03',\n  details: { \n    organization_id: organizationId,\n    organization_name: organizationName \n  }\n};\n\n// In a real n8n environment, you would call Supabase function here\n// For now, we'll prepare the data for logging\nreturn [{\n  json: {\n    organization_id: organizationId,\n    log_params: logParams,\n    success: true\n  }\n}];"
+      },
+      "id": "ef8b4d82-1234-4567-8901-100000000003",
+      "name": "Code: Log Event (Organization Created)",
+      "type": "@n8n/n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 240]
+    },
+    {
+      "parameters": {
+        "operation": "callFunction",
+        "function": "public.log_event",
+        "arguments": "={{$json.log_params}}"
+      },
+      "id": "ef8b4d82-1234-4567-8901-100000000004",
+      "name": "Supabase: Call Log Event",
+      "type": "@n8n/n8n-nodes-supabase.supabase",
+      "typeVersion": 1,
+      "position": [680, 240],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-credentials",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Return the organization_id as the final output\nreturn [{\n  json: {\n    organization_id: $input.all()[0].json.organization_id,\n    success: true\n  }\n}];"
+      },
+      "id": "ef8b4d82-1234-4567-8901-100000000005",
+      "name": "Code: Prepare Final Output",
+      "type": "@n8n/n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 240]
+    }
+  ],
+  "connections": {
+    "Execute Sub-workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Supabase: Insert Organization",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase: Insert Organization": {
+      "main": [
+        [
+          {
+            "node": "Code: Log Event (Organization Created)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code: Log Event (Organization Created)": {
+      "main": [
+        [
+          {
+            "node": "Supabase: Call Log Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase: Call Log Event": {
+      "main": [
+        [
+          {
+            "node": "Code: Prepare Final Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "id": "agent-03-sub",
+      "name": "Agent-03-Subworkflows"
+    }
+  ],
+  "triggerCount": 0,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}

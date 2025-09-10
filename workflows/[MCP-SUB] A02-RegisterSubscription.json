@@ -1,0 +1,471 @@
+{
+  "name": "[MCP-SUB] A02-RegisterSubscription",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "11d97f8a-7b1b-4b2b-9c3d-1234567890ab",
+      "name": "Start",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        340,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.organization_id === null && $json.organization_name !== null }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean"
+              }
+            }
+          ]
+        },
+        "combineOperation": "any"
+      },
+      "id": "22d97f8a-7b1b-4b2b-9c3d-1234567890cd",
+      "name": "New Organization?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        560,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ '[MCP-SUB] A03-CreateOrganization' }}",
+        "waitForSubWorkflow": true,
+        "inputData": "={\"organization_name\": \"{{ $json.organization_name }}\", \"creator_user_id\": \"{{ $json.creator_user_id }}\"}"
+      },
+      "id": "33d97f8a-7b1b-4b2b-9c3d-1234567890ef",
+      "name": "Execute CreateOrganization",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        780,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "org_id_assignment",
+              "name": "organization_id",
+              "value": "={{ $json.organization_id || $node[\"Execute CreateOrganization\"].json.organization_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "44d97f8a-7b1b-4b2b-9c3d-1234567890gh",
+      "name": "Set Organization ID",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [
+        1000,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.admin_user_details !== null && $json.subscription_type === 'organization' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean"
+              }
+            }
+          ]
+        },
+        "combineOperation": "any"
+      },
+      "id": "55d97f8a-7b1b-4b2b-9c3d-1234567890ij",
+      "name": "New Admin User?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ '[MCP-SUB] A03-CreateUser' }}",
+        "waitForSubWorkflow": true,
+        "inputData": "={\"organization_id\": \"{{ $json.organization_id }}\", \"role_name\": \"org_admin\", \"full_name\": \"{{ $json.admin_user_details.full_name }}\", \"email\": \"{{ $json.admin_user_details.email }}\", \"phone_number\": \"{{ $json.admin_user_details.phone_number }}\", \"creator_user_id\": \"{{ $json.creator_user_id }}\"}"
+      },
+      "id": "66d97f8a-7b1b-4b2b-9c3d-1234567890kl",
+      "name": "Execute CreateUser (Admin)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        1440,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "select": "supabaseCredential",
+        "operation": "insert",
+        "tableId": "subscriptions",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "organization_id",
+              "fieldValue": "={{ $json.organization_id }}"
+            },
+            {
+              "fieldId": "subscription_type",
+              "fieldValue": "={{ $json.subscription_type }}"
+            },
+            {
+              "fieldId": "start_date",
+              "fieldValue": "={{ $json.start_date }}"
+            },
+            {
+              "fieldId": "end_date",
+              "fieldValue": "={{ $json.end_date }}"
+            },
+            {
+              "fieldId": "payment_status",
+              "fieldValue": "={{ $json.payment_status }}"
+            },
+            {
+              "fieldId": "stripe_customer_id",
+              "fieldValue": "={{ $json.stripe_customer_id }}"
+            },
+            {
+              "fieldId": "stripe_subscription_id",
+              "fieldValue": "={{ $json.stripe_subscription_id }}"
+            }
+          ]
+        }
+      },
+      "id": "77d97f8a-7b1b-4b2b-9c3d-1234567890mn",
+      "name": "Insert Subscription",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.lead_id !== null }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean"
+              }
+            }
+          ]
+        },
+        "combineOperation": "any"
+      },
+      "id": "88d97f8a-7b1b-4b2b-9c3d-1234567890op",
+      "name": "Lead ID Provided?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1880,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ '[MCP-SUB] A02-UpdateLeadStatus' }}",
+        "waitForSubWorkflow": true,
+        "inputData": "={\"lead_id\": \"{{ $json.lead_id }}\", \"new_status\": \"won\", \"updater_user_id\": \"{{ $json.creator_user_id }}\", \"task_id\": \"{{ $json.task_id }}\"}"
+      },
+      "id": "99d97f8a-7b1b-4b2b-9c3d-1234567890qr",
+      "name": "Execute UpdateLeadStatus (Won)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        2100,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log the subscription registration event\nconst subscriptionId = $node[\"Insert Subscription\"].json.id;\nconst organizationId = $json.organization_id;\nconst taskId = $json.task_id;\n\n// Call log_event function\nconst logEventData = {\n  log_level: 'INFO',\n  log_message: `Suscripción (ID: ${subscriptionId}) registrada para organización (ID: ${organizationId})`,\n  task_id: taskId,\n  agent_id: 'A02',\n  details: { \n    subscription_id: subscriptionId,\n    organization_id: organizationId,\n    subscription_type: $json.subscription_type\n  }\n};\n\nreturn {\n  json: {\n    subscription_id: subscriptionId,\n    organization_id: organizationId,\n    log_event_data: logEventData\n  }\n};"
+      },
+      "id": "10e97f8a-7b1b-4b2b-9c3d-1234567890st",
+      "name": "Log Event (Subscription Registered)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "select": "supabaseCredential",
+        "operation": "callFunction",
+        "functionName": "log_event",
+        "functionArgs": "={{ $json.log_event_data }}"
+      },
+      "id": "20e97f8a-7b1b-4b2b-9c3d-1234567890uv",
+      "name": "Call Log Event Function",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ '[CORE] Handle-Error-and-Retry' }}",
+        "waitForSubWorkflow": true,
+        "inputData": "={\"taskId\": \"{{ $json.task_id }}\", \"error_message\": \"{{ $error.message }}\", \"workflow_to_retry_id\": \"{{ $workflow.id }}\", \"workflow_params\": \"{{ $json }}\", \"agent_id\": \"A02\"}"
+      },
+      "id": "30e97f8a-7b1b-4b2b-9c3d-1234567890wx",
+      "name": "Handle Error and Retry",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        1880,
+        500
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "40e97f8a-7b1b-4b2b-9c3d-1234567890yz",
+      "name": "End Success",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2760,
+        300
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "50e97f8a-7b1b-4b2b-9c3d-12345678901a",
+      "name": "End Error",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2100,
+        500
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "New Organization?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "New Organization?": {
+      "main": [
+        [
+          {
+            "node": "Execute CreateOrganization",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set Organization ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute CreateOrganization": {
+      "main": [
+        [
+          {
+            "node": "Set Organization ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Organization ID": {
+      "main": [
+        [
+          {
+            "node": "New Admin User?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "New Admin User?": {
+      "main": [
+        [
+          {
+            "node": "Execute CreateUser (Admin)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Insert Subscription",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute CreateUser (Admin)": {
+      "main": [
+        [
+          {
+            "node": "Insert Subscription",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Subscription": {
+      "main": [
+        [
+          {
+            "node": "Lead ID Provided?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lead ID Provided?": {
+      "main": [
+        [
+          {
+            "node": "Execute UpdateLeadStatus (Won)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Event (Subscription Registered)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute UpdateLeadStatus (Won)": {
+      "main": [
+        [
+          {
+            "node": "Log Event (Subscription Registered)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Event (Subscription Registered)": {
+      "main": [
+        [
+          {
+            "node": "Call Log Event Function",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Log Event Function": {
+      "main": [
+        [
+          {
+            "node": "End Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Error and Retry": {
+      "main": [
+        [
+          {
+            "node": "End Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "mcp-sub-a02-registersubscription",
+  "tags": [
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "eprm-agents",
+      "name": "EPRM Agents"
+    },
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "agent-02",
+      "name": "Agent 02"
+    },
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "mcp-sub",
+      "name": "MCP Sub"
+    }
+  ]
+}

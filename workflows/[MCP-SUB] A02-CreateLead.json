@@ -1,0 +1,218 @@
+{
+  "name": "[MCP-SUB] A02-CreateLead",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "11b97f8a-7b1b-4b2b-9c3d-1234567890ab",
+      "name": "Start",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        340,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "select": "supabaseCredential",
+        "operation": "insert",
+        "tableId": "commercial_leads",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "organization_name",
+              "fieldValue": "={{ $json.organization_name }}"
+            },
+            {
+              "fieldId": "contact_person",
+              "fieldValue": "={{ $json.contact_person }}"
+            },
+            {
+              "fieldId": "email",
+              "fieldValue": "={{ $json.email }}"
+            },
+            {
+              "fieldId": "phone",
+              "fieldValue": "={{ $json.phone }}"
+            },
+            {
+              "fieldId": "lead_status",
+              "fieldValue": "new"
+            },
+            {
+              "fieldId": "source",
+              "fieldValue": "={{ $json.source }}"
+            },
+            {
+              "fieldId": "assigned_to_user_id",
+              "fieldValue": "={{ $json.creator_user_id }}"
+            }
+          ]
+        }
+      },
+      "id": "22b97f8a-7b1b-4b2b-9c3d-1234567890cd",
+      "name": "Insert Lead",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        560,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log the lead creation event\nconst leadId = $node[\"Insert Lead\"].json.id;\nconst organizationName = $json.organization_name;\nconst taskId = $json.task_id;\n\n// Call log_event function\nconst logEventData = {\n  log_level: 'INFO',\n  log_message: `Lead creado: ${organizationName} (ID: ${leadId})`,\n  task_id: taskId,\n  agent_id: 'A02',\n  details: { \n    lead_id: leadId,\n    organization_name: organizationName,\n    source: $json.source\n  }\n};\n\n// Call Supabase log_event function (this would be done via HTTP request or Supabase node)\n// For now, we'll structure the data to be used by a subsequent Supabase node\n\nreturn {\n  json: {\n    lead_id: leadId,\n    log_event_data: logEventData,\n    success: true\n  }\n};"
+      },
+      "id": "33b97f8a-7b1b-4b2b-9c3d-1234567890ef",
+      "name": "Log Event (Lead Created)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "select": "supabaseCredential",
+        "operation": "callFunction",
+        "functionName": "log_event",
+        "functionArgs": "={{ $json.log_event_data }}"
+      },
+      "id": "44b97f8a-7b1b-4b2b-9c3d-1234567890gh",
+      "name": "Call Log Event Function",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ '[CORE] Handle-Error-and-Retry' }}",
+        "waitForSubWorkflow": true,
+        "inputData": "={\"taskId\": \"{{ $json.task_id }}\", \"error_message\": \"{{ $error.message }}\", \"workflow_to_retry_id\": \"{{ $workflow.id }}\", \"workflow_params\": \"{{ $json }}\", \"agent_id\": \"A02\"}"
+      },
+      "id": "55b97f8a-7b1b-4b2b-9c3d-1234567890ij",
+      "name": "Handle Error and Retry",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        780,
+        500
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "66b97f8a-7b1b-4b2b-9c3d-1234567890kl",
+      "name": "End Success",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1220,
+        300
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "77b97f8a-7b1b-4b2b-9c3d-1234567890mn",
+      "name": "End Error",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        500
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Insert Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Lead": {
+      "main": [
+        [
+          {
+            "node": "Log Event (Lead Created)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Event (Lead Created)": {
+      "main": [
+        [
+          {
+            "node": "Call Log Event Function",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Log Event Function": {
+      "main": [
+        [
+          {
+            "node": "End Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Error and Retry": {
+      "main": [
+        [
+          {
+            "node": "End Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "mcp-sub-a02-createlead",
+  "tags": [
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "eprm-agents",
+      "name": "EPRM Agents"
+    },
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "agent-02",
+      "name": "Agent 02"
+    },
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "mcp-sub",
+      "name": "MCP Sub"
+    }
+  ]
+}
